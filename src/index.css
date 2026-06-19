@@ -1,0 +1,13 @@
+:root {
+  font-family: Inter, "Noto Sans CJK SC", system-ui, -apple-system, sans-serif;
+  color: #292824;
+  background: #f4f2ec;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-width: 320px; min-height: 100%; margin: 0; }
+button, select, input { font: inherit; }

@@ -1,0 +1,1118 @@
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  Braces,
+  Download,
+  Edit3,
+  EyeOff,
+  ExternalLink,
+  FileText,
+  FolderCog,
+  FolderOpen,
+  ImagePlus,
+  Layout,
+  List,
+  Moon,
+  Play,
+  RotateCcw,
+  Sun,
+  Type,
+  Wand2,
+} from 'lucide-react'
+import {
+  MarkdownEditor,
+  type MarkdownEditorHandle,
+} from './components/MarkdownEditor'
+import { buildPresentationHtml } from './lib/exportHtml'
+import {
+  compileMarkdown,
+  formatMarkdownStructure,
+  slideIndexAtOffset,
+  syncManagedToc,
+} from './lib/markdown'
+import {
+  chooseProjectFolder,
+  loadProjectHandle,
+  resolveLocalHtmlAssets,
+  resolveLocalImageAssets,
+  saveHtmlFilesToProject,
+  saveImagesToProject,
+  supportsProjectFolder,
+} from './lib/projectFiles'
+import { defaultMarkdown } from './lib/sample'
+import {
+  defaultThemeCss,
+  fontChoices,
+  themeLabels,
+  type ThemeName,
+} from './lib/themes'
+import type { ComponentStyles, PresentationSettings } from './lib/types'
+import './App.css'
+
+const STORAGE_KEY = 'ready-slides:document'
+const THEME_KEY = 'ready-slides:theme'
+const SETTINGS_KEY = 'ready-slides:settings'
+const APP_MODE_KEY = 'deckdown:app-mode'
+const emptyComponentStyles: ComponentStyles = {
+  list: '',
+  code: '',
+  quote: '',
+  table: '',
+  image: '',
+}
+const componentStyleTemplates: Record<keyof ComponentStyles, string> = {
+  list: `.reveal ul,
+.reveal ol {
+  /* margin-left: 1em; */
+}
+
+.reveal li {
+  /* line-height: 1.5; */
+}
+
+.reveal li::marker {
+  /* color: var(--accent); */
+}`,
+  code: `.reveal pre {
+  /* border-radius: 14px; */
+  /* background: #272822; */
+}
+
+.reveal pre code {
+  /* color: #f8f8f2; */
+  /* font-size: .58em; */
+}`,
+  quote: `.reveal blockquote {
+  /* width: 76%; */
+  /* border-left: 8px solid var(--accent); */
+  /* background: var(--accent-soft); */
+}`,
+  table: `.reveal table {
+  /* font-size: .72em; */
+}
+
+.reveal table th,
+.reveal table td {
+  /* padding: .45em .6em; */
+}`,
+  image: `.reveal img {
+  /* border-radius: 18px; */
+  /* box-shadow: 0 18px 60px rgba(0,0,0,.16); */
+}`,
+}
+const componentStyleLabels: Record<keyof ComponentStyles, string> = {
+  list: '列表',
+  code: '代码框',
+  quote: '引用',
+  table: '表格',
+  image: '图片',
+}
+const defaultSettings: PresentationSettings = {
+  includeToc: true,
+  progressiveReveal: true,
+  hideNavigationControls: false,
+  enableDrawing: false,
+  ratio: '16:9',
+  headingFont: fontChoices[1].value,
+  bodyFont: fontChoices[0].value,
+  headingScale: 1,
+  bodyScale: 1,
+  componentStyles: emptyComponentStyles,
+  themeCss: defaultThemeCss,
+}
+
+function loadThemeCss(saved?: Record<string, string>) {
+  return Object.fromEntries(
+    (Object.keys(defaultThemeCss) as ThemeName[]).map((name) => {
+      const value = saved?.[name]
+      const isLegacyTemplate =
+        value?.includes('当前主题的全局幻灯片样式') &&
+        !value.includes('--cover-pattern')
+      const migrated = value
+        ?.replace(/^\s*--decoration-display:[^;]+;\s*$/gm, '')
+        .replace(/\.reveal\s+\.slide-cover::before\s*\{[^}]*\}/gs, '')
+        .replace(/\.reveal\s+\.slide-section::before\s*\{[^}]*\}/gs, '')
+      return [
+        name,
+        !migrated || isLegacyTemplate ? defaultThemeCss[name] : migrated,
+      ]
+    }),
+  )
+}
+
+function RibbonMenu({
+  id,
+  icon,
+  label,
+  active,
+  onToggle,
+  children,
+}: {
+  id: string
+  icon: ReactNode
+  label: string
+  active: boolean
+  onToggle: (id: string) => void
+  children: ReactNode
+}) {
+  return (
+    <div className={`ribbon-menu ${active ? 'is-open' : ''}`}>
+      <button className="ribbon-button" onClick={() => onToggle(id)}>
+        {icon}
+        <span>{label}</span>
+      </button>
+      {active && <div className="ribbon-dropdown">{children}</div>}
+    </div>
+  )
+}
+
+function MenuItem({
+  icon,
+  label,
+  hint,
+  onClick,
+}: {
+  icon?: ReactNode
+  label: string
+  hint?: string
+  onClick?: () => void
+}) {
+  return (
+    <button className="menu-item" onClick={onClick}>
+      <span className="menu-icon">{icon}</span>
+      <span>{label}</span>
+      {hint && <span className="menu-hint">{hint}</span>}
+    </button>
+  )
+}
+
+function GitHubMark() {
+  return (
+    <svg
+      width="19"
+      height="19"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      fill="currentColor"
+    >
+      <path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.72.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.5-2.01.38-2.53-.5-2.69-.96-.09-.23-.48-.96-.82-1.15-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.01 0-.89.31-1.62.82-2.19-.08-.2-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.46 7.46 0 0 1 8 3.94c.68 0 1.36.09 2 .28 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.96.08 2.16.51.57.82 1.3.82 2.19 0 3.11-1.87 3.8-3.65 4.01.29.25.54.74.54 1.5 0 1.08-.01 1.95-.01 2.22 0 .22.15.47.55.39A8.15 8.15 0 0 0 16 8.13C16 3.64 12.42 0 8 0Z" />
+    </svg>
+  )
+}
+
+function App() {
+  const [markdown, setMarkdown] = useState(
+    () => {
+      const source = localStorage.getItem(STORAGE_KEY) || defaultMarkdown
+      try {
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')
+        return syncManagedToc(source, saved.includeToc ?? true)
+      } catch {
+        return syncManagedToc(source, true)
+      }
+    },
+  )
+  const [theme, setTheme] = useState<ThemeName>(
+    () => (localStorage.getItem(THEME_KEY) as ThemeName) || 'paper',
+  )
+  const [settings, setSettings] = useState<PresentationSettings>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')
+      return {
+        ...defaultSettings,
+        ...saved,
+        componentStyles: {
+          ...emptyComponentStyles,
+          ...(saved.componentStyles || {}),
+        },
+        themeCss: {
+          ...loadThemeCss(saved.themeCss),
+        },
+      }
+    } catch {
+      return defaultSettings
+    }
+  })
+  const [openMenu, setOpenMenu] = useState('')
+  const [fontDialogOpen, setFontDialogOpen] = useState(false)
+  const [styleDialogOpen, setStyleDialogOpen] = useState(false)
+  const [appDarkMode, setAppDarkMode] = useState(
+    () => localStorage.getItem(APP_MODE_KEY) === 'dark',
+  )
+  const [activeStyleComponent, setActiveStyleComponent] =
+    useState<keyof ComponentStyles | 'global'>('global')
+  const fileInput = useRef<HTMLInputElement>(null)
+  const zipInput = useRef<HTMLInputElement>(null)
+  const imageInput = useRef<HTMLInputElement>(null)
+  const htmlInput = useRef<HTMLInputElement>(null)
+  const previewRef = useRef<HTMLIFrameElement>(null)
+  const editorRef = useRef<MarkdownEditorHandle>(null)
+  const [notice, setNotice] = useState('')
+  const [cursorOffset, setCursorOffset] = useState(0)
+  const [projectFolder, setProjectFolder] =
+    useState<FileSystemDirectoryHandle>()
+  const [imageAssets, setImageAssets] = useState<Record<string, string>>({})
+  const [htmlAssets, setHtmlAssets] = useState<Record<string, string>>({})
+  const [exporting, setExporting] = useState('')
+
+  const presentation = useMemo(
+    () => compileMarkdown(markdown, settings.includeToc),
+    [markdown, settings.includeToc],
+  )
+  const activeSlideIndex = useMemo(
+    () => slideIndexAtOffset(presentation, cursorOffset),
+    [presentation, cursorOffset],
+  )
+  const previewHtml = useMemo(
+    () =>
+      buildPresentationHtml(
+        presentation,
+        theme,
+        true,
+        imageAssets,
+        settings,
+        htmlAssets,
+      ),
+    [presentation, theme, imageAssets, settings, htmlAssets],
+  )
+
+  useEffect(() => {
+    void loadProjectHandle()
+      .then(setProjectFolder)
+      .catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void resolveLocalImageAssets(markdown, projectFolder)
+      .then((assets) => {
+        if (!cancelled) setImageAssets(assets)
+      })
+      .catch(() => {
+        if (!cancelled) setImageAssets({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [markdown, projectFolder])
+
+  useEffect(() => {
+    let cancelled = false
+    void resolveLocalHtmlAssets(markdown, projectFolder)
+      .then((assets) => {
+        if (!cancelled) setHtmlAssets(assets)
+      })
+      .catch(() => {
+        if (!cancelled) setHtmlAssets({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [markdown, projectFolder])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      previewRef.current?.contentWindow?.postMessage(
+        { type: 'ready-slides:go-to', index: activeSlideIndex },
+        '*',
+      )
+    }, 80)
+    return () => window.clearTimeout(timer)
+  }, [activeSlideIndex, previewHtml])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, markdown)
+      } catch {
+        setNotice(
+          '本地图片较大，浏览器无法继续自动保存；HTML 导出仍然正常。',
+        )
+      }
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [markdown])
+
+  useEffect(() => {
+    localStorage.setItem(THEME_KEY, theme)
+  }, [theme])
+
+  useEffect(() => {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+  }, [settings])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const synced = syncManagedToc(markdown, settings.includeToc)
+      if (synced !== markdown) setMarkdown(synced)
+    }, 450)
+    return () => window.clearTimeout(timer)
+  }, [markdown, settings.includeToc])
+
+  useEffect(() => {
+    localStorage.setItem(APP_MODE_KEY, appDarkMode ? 'dark' : 'light')
+  }, [appDarkMode])
+
+  useEffect(() => {
+    const close = () => setOpenMenu('')
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [])
+
+  const toggleMenu = (id: string) => {
+    setOpenMenu((current) => (current === id ? '' : id))
+  }
+
+  const downloadHtml = () => {
+    const html = buildPresentationHtml(
+      presentation,
+      theme,
+      false,
+      imageAssets,
+      settings,
+      htmlAssets,
+    )
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `${presentation.title || 'slides'}.html`
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }
+
+  const downloadRendered = async (format: 'pdf' | 'pptx') => {
+    setOpenMenu('')
+    setExporting(format)
+    setNotice(`正在生成 ${format.toUpperCase()}…`)
+    const printWindow =
+      format === 'pdf' ? window.open('about:blank', '_blank') : null
+    try {
+      const html = buildPresentationHtml(
+        presentation,
+        theme,
+        true,
+        imageAssets,
+        settings,
+        htmlAssets,
+      )
+      const { exportEditablePptx, printSelectablePdf } = await import(
+        './lib/exportPresentation'
+      )
+      if (format === 'pdf') {
+        printSelectablePdf(html, presentation.title, printWindow)
+        setNotice('已打开打印窗口；选择“存储为 PDF”即可保留可选择文字和链接。')
+      } else {
+        await exportEditablePptx(
+          presentation,
+          settings.ratio,
+          theme,
+          imageAssets,
+          settings,
+        )
+        setNotice('PPTX 已导出；文字、列表、表格和图片均为可编辑元素。')
+      }
+    } catch (error) {
+      printWindow?.close()
+      console.error(error)
+      setNotice(`${format.toUpperCase()} 导出失败，请稍后重试。`)
+    } finally {
+      setExporting('')
+      window.setTimeout(() => setNotice(''), 3200)
+    }
+  }
+
+  const downloadProjectZip = async () => {
+    setOpenMenu('')
+    setExporting('zip')
+    setNotice('正在打包项目文件…')
+    try {
+      const { exportProjectZip } = await import('./lib/projectZip')
+      await exportProjectZip({
+        markdown,
+        title: presentation.title,
+        theme,
+        settings,
+        imageAssets,
+        htmlAssets,
+      })
+      setNotice('项目 ZIP 已导出，包含 Markdown、HTML、素材和编辑设置。')
+    } catch (error) {
+      console.error(error)
+      setNotice('项目 ZIP 导出失败，请稍后重试。')
+    } finally {
+      setExporting('')
+      window.setTimeout(() => setNotice(''), 3200)
+    }
+  }
+
+  const openPresentation = () => {
+    const html = buildPresentationHtml(
+      presentation,
+      theme,
+      false,
+      imageAssets,
+      settings,
+      htmlAssets,
+    )
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    window.open(URL.createObjectURL(blob), '_blank', 'noopener,noreferrer')
+  }
+
+  const importMarkdown = async (file?: File) => {
+    if (!file) return
+    setMarkdown(syncManagedToc(await file.text(), settings.includeToc))
+  }
+
+  const importProject = async (file?: File) => {
+    if (!file) return
+    setOpenMenu('')
+    setNotice('正在读取项目 ZIP…')
+    try {
+      const { importProjectZip } = await import('./lib/projectZip')
+      const imported = await importProjectZip(file)
+      const importedSettings = imported.settings
+        ? {
+            ...defaultSettings,
+            ...imported.settings,
+            componentStyles: {
+              ...emptyComponentStyles,
+              ...(imported.settings.componentStyles || {}),
+            },
+            themeCss: loadThemeCss(imported.settings.themeCss),
+          }
+        : settings
+      setSettings(importedSettings)
+      if (imported.theme && imported.theme in themeLabels) {
+        setTheme(imported.theme)
+      }
+      setProjectFolder(undefined)
+      setMarkdown(
+        syncManagedToc(
+          imported.markdown,
+          importedSettings.includeToc,
+        ),
+      )
+      setNotice(`项目已恢复，共载入 ${imported.assetCount} 个素材文件。`)
+    } catch (error) {
+      console.error(error)
+      setNotice((error as Error).message || '项目 ZIP 导入失败。')
+    }
+    window.setTimeout(() => setNotice(''), 3200)
+  }
+
+  const insertImageFiles = async (files: File[]) => {
+    setNotice('正在处理本地图片…')
+    try {
+      const imageMarkdown = await saveImagesToProject(files, projectFolder)
+      setNotice(
+        imageMarkdown
+          ? projectFolder
+            ? `已将 ${files.length} 张图片保存到 images/。`
+            : `已将 ${files.length} 张图片保存到浏览器素材库，Markdown 使用 images/ 相对路径。`
+          : '没有找到可用的图片。',
+      )
+      window.setTimeout(() => setNotice(''), 2600)
+      return imageMarkdown
+    } catch {
+      setNotice('图片处理失败，请换一张图片重试。')
+      return ''
+    }
+  }
+
+  const selectProjectFolder = async () => {
+    if (!supportsProjectFolder()) {
+      setNotice('当前浏览器使用内置素材库；Markdown 仍使用 images/ 相对路径。')
+      return
+    }
+    try {
+      const handle = await chooseProjectFolder()
+      setProjectFolder(handle)
+      setNotice(`项目文件夹：${handle.name}`)
+      window.setTimeout(() => setNotice(''), 2400)
+    } catch (error) {
+      if ((error as DOMException).name !== 'AbortError') {
+        setNotice((error as Error).message || '无法打开项目文件夹。')
+      }
+    }
+  }
+
+  const chooseImages = async (files?: FileList | null) => {
+    if (!files?.length) return
+    const text = await insertImageFiles(Array.from(files))
+    editorRef.current?.insertText(text)
+  }
+
+  const resetDocument = () => {
+    if (window.confirm('恢复示例内容？当前编辑内容会被替换。')) {
+      setMarkdown(syncManagedToc(defaultMarkdown, settings.includeToc))
+    }
+  }
+
+  const formatDocument = () => {
+    setMarkdown((value) =>
+      syncManagedToc(
+        formatMarkdownStructure(value),
+        settings.includeToc,
+      ),
+    )
+    setNotice('已整理标题层级：H1 标题页、H2 章节页、H3 内容页。')
+    window.setTimeout(() => setNotice(''), 2600)
+  }
+
+  const insertWebPage = () => {
+    const url = window.prompt(
+      '输入网页地址：',
+      'https://',
+    )
+    if (!url) return
+    const label = window.prompt('链接名称：', '打开网页') || '打开网页'
+    editorRef.current?.insertText(`\n\n[${label}](${url})\n\n`)
+  }
+
+  const chooseHtmlFiles = async (files?: FileList | null) => {
+    if (!files?.length) return
+    setNotice('正在处理 HTML 文件…')
+    try {
+      const result = await saveHtmlFilesToProject(
+        Array.from(files),
+        projectFolder,
+      )
+      setHtmlAssets((current) => ({ ...current, ...result.assets }))
+      editorRef.current?.insertText(result.markdown)
+      setNotice(
+        projectFolder
+          ? `已将 ${files.length} 个 HTML 文件保存到 html/。`
+          : `已将 ${files.length} 个 HTML 文件嵌入浏览器素材库。`,
+      )
+    } catch {
+      setNotice('HTML 文件处理失败，请重试。')
+    }
+    window.setTimeout(() => setNotice(''), 2600)
+  }
+
+  const updateSettings = (patch: Partial<PresentationSettings>) =>
+    setSettings((current) => ({ ...current, ...patch }))
+
+  const updateComponentStyle = (
+    component: keyof ComponentStyles,
+    value: string,
+  ) =>
+    setSettings((current) => ({
+      ...current,
+      componentStyles: {
+        ...current.componentStyles,
+        [component]: value,
+      },
+    }))
+
+  const updateThemeCss = (value: string) =>
+    setSettings((current) => ({
+      ...current,
+      themeCss: {
+        ...current.themeCss,
+        [theme]: value,
+      },
+    }))
+
+  return (
+    <main className={`app-shell ${appDarkMode ? 'is-dark' : ''}`}>
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-mark">
+            <img src="/android-chrome-192x192.png" alt="" />
+          </div>
+          <div>
+            <strong>Deckdown</strong>
+            <span>MARKDOWN → DECK</span>
+          </div>
+        </div>
+
+        <div className="ribbon" onClick={(event) => event.stopPropagation()}>
+          <RibbonMenu
+            id="open"
+            icon={<FolderOpen size={18} />}
+            label="打开"
+            active={openMenu === 'open'}
+            onToggle={toggleMenu}
+          >
+            <MenuItem
+              icon={<FileText size={16} />}
+              label="打开 Markdown"
+              hint=".md"
+              onClick={() => fileInput.current?.click()}
+            />
+            <MenuItem
+              icon={<FolderOpen size={16} />}
+              label="导入 Deckdown 项目"
+              hint=".zip"
+              onClick={() => zipInput.current?.click()}
+            />
+            <MenuItem
+              icon={<FolderCog size={16} />}
+              label={projectFolder ? `文件夹：${projectFolder.name}` : '打开项目文件夹'}
+              onClick={() => void selectProjectFolder()}
+            />
+          </RibbonMenu>
+          <input
+            ref={fileInput}
+            hidden
+            type="file"
+            accept=".md,.markdown,text/markdown,text/plain"
+            onChange={(event) => importMarkdown(event.target.files?.[0])}
+          />
+          <input
+            ref={zipInput}
+            hidden
+            type="file"
+            accept=".zip,application/zip"
+            onChange={(event) => {
+              void importProject(event.target.files?.[0])
+              event.target.value = ''
+            }}
+          />
+          <RibbonMenu
+            id="format"
+            icon={<Wand2 size={18} />}
+            label="格式化"
+            active={openMenu === 'format'}
+            onToggle={toggleMenu}
+          >
+            <MenuItem
+              icon={<Wand2 size={16} />}
+              label="快速整理标题"
+              hint="H1 / H2 / H3"
+              onClick={formatDocument}
+            />
+            <MenuItem
+              icon={<List size={16} />}
+              label={settings.includeToc ? '关闭自动目录' : '添加自动目录'}
+              hint="标题页之后"
+              onClick={() => {
+                const includeToc = !settings.includeToc
+                updateSettings({ includeToc })
+                setMarkdown((current) => syncManagedToc(current, includeToc))
+              }}
+            />
+          </RibbonMenu>
+
+          <RibbonMenu
+            id="insert"
+            icon={<ImagePlus size={18} />}
+            label="插入"
+            active={openMenu === 'insert'}
+            onToggle={toggleMenu}
+          >
+            <MenuItem
+              icon={<ImagePlus size={16} />}
+              label="插入图片"
+              onClick={() => imageInput.current?.click()}
+            />
+            <MenuItem
+              icon={<ExternalLink size={16} />}
+              label="插入 HTML 文件"
+              hint="嵌入演示"
+              onClick={() => htmlInput.current?.click()}
+            />
+            <MenuItem
+              icon={<ExternalLink size={16} />}
+              label="插入网页地址"
+              hint="https://"
+              onClick={insertWebPage}
+            />
+          </RibbonMenu>
+          <input
+            ref={imageInput}
+            hidden
+            multiple
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              void chooseImages(event.target.files)
+              event.target.value = ''
+            }}
+          />
+          <input
+            ref={htmlInput}
+            hidden
+            multiple
+            type="file"
+            accept=".html,.htm,text/html"
+            onChange={(event) => {
+              void chooseHtmlFiles(event.target.files)
+              event.target.value = ''
+            }}
+          />
+
+          <RibbonMenu
+            id="design"
+            icon={<Layout size={18} />}
+            label="设计"
+            active={openMenu === 'design'}
+            onToggle={toggleMenu}
+          >
+            <div className="menu-label">主题</div>
+            <div className="theme-grid">
+              {(Object.keys(themeLabels) as ThemeName[]).map((name) => (
+                <button
+                  key={name}
+                  className={`theme-swatch theme-${name} ${theme === name ? 'is-active' : ''}`}
+                  onClick={() => setTheme(name)}
+                >
+                  <span />
+                  {themeLabels[name]}
+                </button>
+              ))}
+            </div>
+            <div className="menu-separator" />
+            <MenuItem
+              icon={<Type size={16} />}
+              label="字体设置"
+              hint="标题 / 正文"
+              onClick={() => setFontDialogOpen(true)}
+            />
+            <MenuItem
+              icon={<Braces size={16} />}
+              label="组件 CSS"
+              hint="列表 / 代码 / 引用…"
+              onClick={() => setStyleDialogOpen(true)}
+            />
+            <div className="submenu-row">
+              <span><Layout size={16} /> 幻灯片大小</span>
+              <div className="segmented">
+                {(['16:9', '4:3'] as const).map((ratio) => (
+                  <button
+                    key={ratio}
+                    className={settings.ratio === ratio ? 'is-active' : ''}
+                    onClick={() => updateSettings({ ratio })}
+                  >
+                    {ratio}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="submenu-row">
+              <span><Play size={16} /> 逐项出现动画</span>
+              <button
+                className={`toggle-switch ${settings.progressiveReveal ? 'is-active' : ''}`}
+                role="switch"
+                aria-checked={settings.progressiveReveal}
+                onClick={() =>
+                  updateSettings({
+                    progressiveReveal: !settings.progressiveReveal,
+                  })
+                }
+              >
+                <span />
+              </button>
+            </div>
+            <div className="submenu-row">
+              <span><EyeOff size={16} /> 隐藏进度条和方向箭头</span>
+              <button
+                className={`toggle-switch ${settings.hideNavigationControls ? 'is-active' : ''}`}
+                role="switch"
+                aria-checked={settings.hideNavigationControls}
+                onClick={() =>
+                  updateSettings({
+                    hideNavigationControls:
+                      !settings.hideNavigationControls,
+                  })
+                }
+              >
+                <span />
+              </button>
+            </div>
+            <div className="submenu-row">
+              <span><Edit3 size={16} /> 自由绘图</span>
+              <button
+                className={`toggle-switch ${settings.enableDrawing ? 'is-active' : ''}`}
+                role="switch"
+                aria-checked={settings.enableDrawing}
+                onClick={() =>
+                  updateSettings({
+                    enableDrawing: !settings.enableDrawing,
+                  })
+                }
+              >
+                <span />
+              </button>
+            </div>
+          </RibbonMenu>
+
+          <button className="ribbon-button" onClick={openPresentation}>
+            <Play size={18} />
+            <span>播放</span>
+          </button>
+          <RibbonMenu
+            id="export"
+            icon={<Download size={18} />}
+            label="导出"
+            active={openMenu === 'export'}
+            onToggle={toggleMenu}
+          >
+            <MenuItem
+              icon={<Download size={16} />}
+              label="导出独立 HTML"
+              hint="离线播放"
+              onClick={downloadHtml}
+            />
+            <MenuItem
+              icon={<Download size={16} />}
+              label={exporting === 'pdf' ? '正在生成 PDF…' : '导出 PDF'}
+              hint="文字可选择"
+              onClick={() => void downloadRendered('pdf')}
+            />
+            <MenuItem
+              icon={<Download size={16} />}
+              label={exporting === 'pptx' ? '正在生成 PPTX…' : '导出 PPTX'}
+              hint="内容可编辑"
+              onClick={() => void downloadRendered('pptx')}
+            />
+            <MenuItem
+              icon={<FolderOpen size={16} />}
+              label={exporting === 'zip' ? '正在打包项目…' : '导出项目 ZIP'}
+              hint="跨设备继续编辑"
+              onClick={() => void downloadProjectZip()}
+            />
+          </RibbonMenu>
+          <button className="ribbon-button" onClick={resetDocument} title="恢复示例">
+            <RotateCcw size={16} />
+            <span>恢复</span>
+          </button>
+        </div>
+        <div className="topbar-actions">
+          <button
+            className="topbar-action"
+            onClick={() => setAppDarkMode((current) => !current)}
+            title={appDarkMode ? '切换到日间模式' : '切换到夜间模式'}
+          >
+            {appDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <a
+            className="topbar-action"
+            href="#github"
+            onClick={(event) => event.preventDefault()}
+            title="GitHub"
+            aria-label="GitHub"
+          >
+            <GitHubMark />
+          </a>
+        </div>
+      </header>
+
+      <section className="workspace">
+        <div className="pane editor-pane">
+          <div className="pane-header">
+            <div>
+              <FileText size={16} />
+              <span>Markdown</span>
+            </div>
+            <span className="status">
+              可编辑 · 自动保存 · {markdown.length.toLocaleString()} 字符
+            </span>
+          </div>
+          <MarkdownEditor
+            ref={editorRef}
+            value={markdown}
+            onChange={setMarkdown}
+            onImageFiles={insertImageFiles}
+            onCursorChange={setCursorOffset}
+          />
+          <div className="editor-tip">
+            点击后直接输入 · 可粘贴或拖入本地图片
+          </div>
+        </div>
+
+        <div className="divider" />
+
+        <div className="pane preview-pane">
+          <div className="pane-header preview-header">
+            <span className="status">
+              第 {activeSlideIndex + 1} / {presentation.slides.length} 页
+            </span>
+          </div>
+          <div className="preview-stage">
+            <iframe
+              ref={previewRef}
+              key={`${theme}-${presentation.fingerprint}`}
+              title="幻灯片预览"
+              srcDoc={previewHtml}
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-modals"
+            />
+          </div>
+          <div className="preview-tip">
+            <span>← → 切换章节 · ↑ ↓ 切换章节内容 · F 全屏 · O 总览</span>
+          </div>
+        </div>
+      </section>
+      {fontDialogOpen && (
+        <div className="dialog-backdrop" onMouseDown={() => setFontDialogOpen(false)}>
+          <section className="font-dialog" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="dialog-header">
+              <div>
+                <strong>字体设置</strong>
+                <span>分别控制标题与正文，预览会立即更新。</span>
+              </div>
+              <button onClick={() => setFontDialogOpen(false)}>×</button>
+            </div>
+            <label>
+              标题字体
+              <select
+                value={settings.headingFont}
+                onChange={(event) => updateSettings({ headingFont: event.target.value })}
+              >
+                {fontChoices.map((font) => (
+                  <option key={font.label} value={font.value}>{font.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              正文字体
+              <select
+                value={settings.bodyFont}
+                onChange={(event) => updateSettings({ bodyFont: event.target.value })}
+              >
+                {fontChoices.map((font) => (
+                  <option key={font.label} value={font.value}>{font.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              标题字号 <output>{Math.round(settings.headingScale * 100)}%</output>
+              <input
+                type="range"
+                min=".8"
+                max="1.35"
+                step=".05"
+                value={settings.headingScale}
+                onChange={(event) => updateSettings({ headingScale: Number(event.target.value) })}
+              />
+            </label>
+            <label>
+              正文字号 <output>{Math.round(settings.bodyScale * 100)}%</output>
+              <input
+                type="range"
+                min=".8"
+                max="1.25"
+                step=".05"
+                value={settings.bodyScale}
+                onChange={(event) => updateSettings({ bodyScale: Number(event.target.value) })}
+              />
+            </label>
+            <div className="dialog-actions">
+              <button
+                onClick={() =>
+                  updateSettings({
+                    headingFont: defaultSettings.headingFont,
+                    bodyFont: defaultSettings.bodyFont,
+                    headingScale: 1,
+                    bodyScale: 1,
+                  })
+                }
+              >
+                恢复默认
+              </button>
+              <button className="primary" onClick={() => setFontDialogOpen(false)}>完成</button>
+            </div>
+          </section>
+        </div>
+      )}
+      {styleDialogOpen && (
+        <div className="dialog-backdrop" onMouseDown={() => setStyleDialogOpen(false)}>
+          <section
+            className="style-dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="dialog-header">
+              <div>
+                <strong>组件 CSS</strong>
+                <span>全局 CSS 中可直接修改封面背景、渐变图案和章节装饰。</span>
+              </div>
+              <button onClick={() => setStyleDialogOpen(false)}>×</button>
+            </div>
+            <div className="style-editor-layout">
+              <nav className="style-component-tabs">
+                <button
+                  className={activeStyleComponent === 'global' ? 'is-active' : ''}
+                  onClick={() => setActiveStyleComponent('global')}
+                >
+                  全局幻灯片
+                </button>
+                {(Object.keys(componentStyleLabels) as Array<keyof ComponentStyles>).map(
+                  (component) => (
+                    <button
+                      key={component}
+                      className={activeStyleComponent === component ? 'is-active' : ''}
+                      onClick={() => setActiveStyleComponent(component)}
+                    >
+                      {componentStyleLabels[component]}
+                    </button>
+                  ),
+                )}
+              </nav>
+              <div className="style-code-pane">
+                <div className="style-code-toolbar">
+                  <span>
+                    {activeStyleComponent === 'global'
+                      ? `${themeLabels[theme]}主题 · 全局 CSS`
+                      : `${componentStyleLabels[activeStyleComponent]} CSS`}
+                  </span>
+                  <button
+                    onClick={() => {
+                      if (activeStyleComponent === 'global') {
+                        updateThemeCss(defaultThemeCss[theme])
+                      } else {
+                        updateComponentStyle(
+                          activeStyleComponent,
+                          componentStyleTemplates[activeStyleComponent],
+                        )
+                      }
+                    }}
+                  >
+                    {activeStyleComponent === 'global' ? '恢复当前主题 CSS' : '插入代码框架'}
+                  </button>
+                </div>
+                <textarea
+                  spellCheck={false}
+                  value={
+                    activeStyleComponent === 'global'
+                      ? settings.themeCss[theme]
+                      : settings.componentStyles[activeStyleComponent]
+                  }
+                  placeholder={
+                    activeStyleComponent === 'global'
+                      ? defaultThemeCss[theme]
+                      : componentStyleTemplates[activeStyleComponent]
+                  }
+                  onChange={(event) => {
+                    if (activeStyleComponent === 'global') {
+                      updateThemeCss(event.target.value)
+                    } else {
+                      updateComponentStyle(activeStyleComponent, event.target.value)
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="dialog-actions">
+              <button
+                onClick={() => {
+                  updateSettings({
+                    componentStyles: emptyComponentStyles,
+                    themeCss: defaultThemeCss,
+                  })
+                }}
+              >
+                清空全部
+              </button>
+              <button className="primary" onClick={() => setStyleDialogOpen(false)}>
+                完成
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {notice && <div className="toast">{notice}</div>}
+    </main>
+  )
+}
+
+export default App

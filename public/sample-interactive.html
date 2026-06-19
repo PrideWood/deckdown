@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deckdown 交互示例</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      margin: 0;
+      color: #fff;
+      background: #171717;
+      font-family: system-ui, sans-serif;
+    }
+    main { text-align: center; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 20px;
+      color: #fff;
+      background: #e86332;
+      font: inherit;
+      cursor: pointer;
+    }
+    output { display: block; margin: 18px; font-size: 42px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>嵌入式 HTML 正常运行</h1>
+    <p>这个页面用于测试 HTML、CSS 与 JavaScript。</p>
+    <output id="count">0</output>
+    <button id="add">点击计数</button>
+  </main>
+  <script>
+    let count = 0
+    document.querySelector('#add').addEventListener('click', () => {
+      count += 1
+      document.querySelector('#count').value = count
+    })
+  </script>
+</body>
+</html>
