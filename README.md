@@ -18,7 +18,7 @@
 - 可分别覆盖列表、代码框、引用、表格和图片 CSS
 - 可按主题编辑全局幻灯片 CSS，并在现有主题样式上继续调整
 - `-` 列表始终整组出现，`+` / `*` 列表在开启动画时逐项出现
-- 工作台日间/夜间模式及 GitHub 链接预留位
+- 工作台日间/夜间模式及 GitHub 仓库链接
 - 实时 Reveal.js 预览
 - 下载一个可离线播放的 HTML 文件
 - 导出高清逐页图片 PDF，完整保留浏览器幻灯片样式
@@ -45,6 +45,18 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## GitHub Pages 部署
+
+仓库推送到 `main` 分支后，`.github/workflows/deploy-pages.yml` 会自动
+构建并发布 `dist`。线上地址为：
+
+```text
+https://pridewood.github.io/deckdown/
+```
+
+首次部署时，需要在 GitHub 仓库的 **Settings → Pages** 中将
+**Source** 设为 **GitHub Actions**。
 
 ## Markdown 约定
 

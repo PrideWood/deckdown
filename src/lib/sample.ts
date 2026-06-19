@@ -73,7 +73,7 @@ const presentation = compileMarkdown(markdown, {
 
 ### 图片页面
 
-![Deckdown favicon|220](/android-chrome-512x512.png)
+![Deckdown favicon|220](android-chrome-512x512.png)
 
 单张图片会自动居中；文字和图片同时出现时会使用分栏布局。
 
@@ -81,11 +81,11 @@ const presentation = compileMarkdown(markdown, {
 
 同一页同时包含正文和图片时，Deckdown 会把文字与图片分配到两栏。
 
-![Deckdown 图标|260](/android-chrome-512x512.png)
+![Deckdown 图标|260](android-chrome-512x512.png)
 
 ### 网页链接
 
-[打开 Deckdown 内置交互页面](/sample-interactive.html)
+[打开 Deckdown 内置交互页面](sample-interactive.html)
 
 网页或 HTML 页面会覆盖在演示上方。点击右上角关闭按钮，或按 **Shift + Esc** 返回。
 

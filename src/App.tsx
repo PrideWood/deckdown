@@ -632,7 +632,10 @@ function App() {
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">
-            <img src="/android-chrome-192x192.png" alt="" />
+            <img
+              src={`${import.meta.env.BASE_URL}android-chrome-192x192.png`}
+              alt=""
+            />
           </div>
           <div>
             <strong>Deckdown</strong>
@@ -896,8 +899,9 @@ function App() {
           </button>
           <a
             className="topbar-action"
-            href="#github"
-            onClick={(event) => event.preventDefault()}
+            href="https://github.com/PrideWood/deckdown"
+            target="_blank"
+            rel="noreferrer"
             title="GitHub"
             aria-label="GitHub"
           >
