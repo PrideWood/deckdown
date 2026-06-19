@@ -126,6 +126,25 @@ const presentationCss = `
     align-items: center;
     gap: 22px;
   }
+  .slide-body.is-fixed-columns .slide-body-inner {
+    display: block;
+  }
+  .deckdown-columns {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 44px;
+  }
+  .deckdown-column {
+    min-width: 0;
+  }
+  .deckdown-column > :first-child { margin-top: 0; }
+  .deckdown-column > :last-child { margin-bottom: 0; }
+  .deckdown-column img {
+    max-width: 100%;
+    max-height: 430px;
+  }
   .table-column {
     min-width: 0;
     max-height: 100%;
@@ -523,6 +542,13 @@ export function buildPresentationHtml(
       return `${titleHtml}${root.innerHTML}`
     }
 
+    if (root.querySelector(':scope > .deckdown-columns')) {
+      return `<div class="slide-title">${titleHtml}</div>
+        <div class="slide-body is-fixed-columns">
+          <div class="slide-body-inner">${root.innerHTML}</div>
+        </div>`
+    }
+
     const imageNodes = [...root.querySelectorAll('img')]
     const tableNodes = [...root.querySelectorAll('table')]
     const imageContainers = new Set<Element>()
@@ -784,6 +810,9 @@ export function buildPresentationHtml(
         fitAllSlides();
         setTimeout(fitAllSlides, 120);
       });
+      if (${isPreview ? 'true' : 'false'} && window.parent !== window) {
+        window.parent.postMessage({ type: 'ready-slides:ready' }, '*');
+      }
     });
     Reveal.on('slidechanged', function (event) {
       requestAnimationFrame(function () { fitSlideBody(event.currentSlide); });

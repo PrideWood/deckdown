@@ -168,9 +168,34 @@ export const MarkdownEditor = forwardRef<
 
   useEffect(() => {
     const editor = view.current
-    if (!editor || editor.state.doc.toString() === value) return
+    if (!editor) return
+    const current = editor.state.doc.toString()
+    if (current === value) return
+
+    let prefix = 0
+    const prefixLimit = Math.min(current.length, value.length)
+    while (prefix < prefixLimit && current[prefix] === value[prefix]) {
+      prefix += 1
+    }
+
+    let suffix = 0
+    const suffixLimit = Math.min(
+      current.length - prefix,
+      value.length - prefix,
+    )
+    while (
+      suffix < suffixLimit &&
+      current[current.length - 1 - suffix] === value[value.length - 1 - suffix]
+    ) {
+      suffix += 1
+    }
+
     editor.dispatch({
-      changes: { from: 0, to: editor.state.doc.length, insert: value },
+      changes: {
+        from: prefix,
+        to: current.length - suffix,
+        insert: value.slice(prefix, value.length - suffix),
+      },
     })
   }, [value])
 

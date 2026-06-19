@@ -64,9 +64,76 @@ function splitAtSeparators(chunk: SourceChunk): SourceChunk[] {
   return parts
 }
 
+function extractColumnGroups(source: string) {
+  const lines = source.split('\n')
+  const output: string[] = []
+  const groups: string[][] = []
+  let index = 0
+
+  while (index < lines.length) {
+    if (!/^\s*:::\s*block\s*$/.test(lines[index])) {
+      output.push(lines[index])
+      index += 1
+      continue
+    }
+
+    const groupStart = index
+    const blocks: string[] = []
+    let cursor = index
+
+    while (cursor < lines.length && /^\s*:::\s*block\s*$/.test(lines[cursor])) {
+      const contentStart = cursor + 1
+      let contentEnd = contentStart
+      while (
+        contentEnd < lines.length &&
+        !/^\s*:::\s*$/.test(lines[contentEnd])
+      ) {
+        contentEnd += 1
+      }
+      if (contentEnd >= lines.length) break
+      blocks.push(lines.slice(contentStart, contentEnd).join('\n').trim())
+      cursor = contentEnd + 1
+      while (cursor < lines.length && !lines[cursor].trim()) cursor += 1
+    }
+
+    if (blocks.length >= 2) {
+      const groupIndex = groups.push(blocks) - 1
+      output.push(
+        `<div data-deckdown-columns-placeholder="${groupIndex}"></div>`,
+      )
+      index = cursor
+    } else {
+      output.push(...lines.slice(groupStart, Math.max(cursor, groupStart + 1)))
+      index = Math.max(cursor, groupStart + 1)
+    }
+  }
+
+  return { source: output.join('\n'), groups }
+}
+
 function renderMarkdown(source: string) {
+  const columns = extractColumnGroups(source)
   const template = document.createElement('template')
-  template.innerHTML = marked.parse(source) as string
+  template.innerHTML = marked.parse(columns.source) as string
+  template.content
+    .querySelectorAll<HTMLElement>('[data-deckdown-columns-placeholder]')
+    .forEach((placeholder) => {
+      const groupIndex = Number(
+        placeholder.dataset.deckdownColumnsPlaceholder || 0,
+      )
+      const container = document.createElement('div')
+      container.className = 'deckdown-columns'
+      container.dataset.columnCount = String(
+        columns.groups[groupIndex]?.length || 2,
+      )
+      ;(columns.groups[groupIndex] || []).forEach((block) => {
+        const column = document.createElement('div')
+        column.className = 'deckdown-column'
+        column.innerHTML = marked.parse(block) as string
+        container.append(column)
+      })
+      placeholder.replaceWith(container)
+    })
   const markers = [...source.matchAll(/^\s*([-+*])\s+/gm)].map(
     (match) => match[1],
   )

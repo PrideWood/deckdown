@@ -245,6 +245,7 @@ function App() {
   const imageInput = useRef<HTMLInputElement>(null)
   const htmlInput = useRef<HTMLInputElement>(null)
   const previewRef = useRef<HTMLIFrameElement>(null)
+  const activeSlideIndexRef = useRef(0)
   const editorRef = useRef<MarkdownEditorHandle>(null)
   const [notice, setNotice] = useState('')
   const [cursorOffset, setCursorOffset] = useState(0)
@@ -310,14 +311,37 @@ function App() {
   }, [markdown, projectFolder])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    activeSlideIndexRef.current = activeSlideIndex
+    const timers = [0, 100, 320].map((delay) =>
+      window.setTimeout(() => {
+        previewRef.current?.contentWindow?.postMessage(
+          { type: 'ready-slides:go-to', index: activeSlideIndex },
+          '*',
+        )
+      }, delay),
+    )
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [activeSlideIndex, previewHtml])
+
+  useEffect(() => {
+    const handlePreviewReady = (event: MessageEvent) => {
+      if (
+        event.source !== previewRef.current?.contentWindow ||
+        event.data?.type !== 'ready-slides:ready'
+      ) {
+        return
+      }
       previewRef.current?.contentWindow?.postMessage(
-        { type: 'ready-slides:go-to', index: activeSlideIndex },
+        {
+          type: 'ready-slides:go-to',
+          index: activeSlideIndexRef.current,
+        },
         '*',
       )
-    }, 80)
-    return () => window.clearTimeout(timer)
-  }, [activeSlideIndex, previewHtml])
+    }
+    window.addEventListener('message', handlePreviewReady)
+    return () => window.removeEventListener('message', handlePreviewReady)
+  }, [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -932,10 +956,18 @@ function App() {
           <div className="preview-stage">
             <iframe
               ref={previewRef}
-              key={`${theme}-${presentation.fingerprint}`}
               title="幻灯片预览"
               srcDoc={previewHtml}
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-modals"
+              onLoad={() => {
+                previewRef.current?.contentWindow?.postMessage(
+                  {
+                    type: 'ready-slides:go-to',
+                    index: activeSlideIndexRef.current,
+                  },
+                  '*',
+                )
+              }}
             />
           </div>
           <div className="preview-tip">
