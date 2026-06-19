@@ -315,6 +315,10 @@ const presentationCss = `
     color: var(--muted);
     font: 15px var(--font-body);
   }
+  .reveal .slide-number a {
+    color: inherit;
+    text-decoration: none;
+  }
   .drawing-layer {
     position: fixed;
     inset: 0;
@@ -334,17 +338,16 @@ const presentationCss = `
   .drawing-tools {
     position: fixed;
     z-index: 910;
-    left: 14px;
+    left: 50%;
     bottom: 14px;
+    transform: translateX(-50%);
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 4px;
+    padding: 0;
     border: 0;
-    border-radius: 9px;
-    background: color-mix(in srgb, var(--slide-bg) 86%, transparent);
-    box-shadow: 0 4px 18px rgba(0,0,0,.14);
-    backdrop-filter: blur(8px);
+    background: transparent;
+    box-shadow: none;
   }
   .drawing-tools button {
     width: 42px;
@@ -372,29 +375,34 @@ const presentationCss = `
     color: var(--slide-bg);
     background: var(--accent);
   }
-  .drawing-color-control {
-    position: relative;
-    width: 34px;
-    height: 34px;
+  .drawing-colors {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    margin-left: 3px;
+  }
+  .drawing-tools.is-pen .drawing-colors {
+    display: flex;
+  }
+  .drawing-tools .drawing-color {
+    width: 28px;
+    height: 28px;
     display: grid;
     place-items: center;
+    border: 2px solid var(--slide-bg);
     border-radius: 50%;
+    padding: 0;
+    background: var(--drawing-color);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--slide-fg) 28%, transparent);
     cursor: pointer;
   }
-  .drawing-color-control input {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    opacity: 0;
-    pointer-events: none;
-  }
-  .drawing-color-swatch {
-    width: 24px;
-    height: 24px;
-    border: 3px solid var(--slide-bg);
-    border-radius: 50%;
-    background: var(--drawing-color, var(--accent));
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--slide-fg) 28%, transparent);
+  .drawing-tools .drawing-color:hover,
+  .drawing-tools .drawing-color.is-active {
+    color: transparent;
+    background: var(--drawing-color);
+    box-shadow:
+      0 0 0 2px var(--slide-bg),
+      0 0 0 4px var(--accent);
   }
   @media print {
     .drawing-layer,
@@ -691,10 +699,14 @@ export function buildPresentationHtml(
         <path d="M7 21h14"></path>
       </svg>
     </button>
-    <label class="drawing-color-control" title="画笔颜色" aria-label="画笔颜色">
-      <input type="color" id="drawing-color" value="#d34b32">
-      <span class="drawing-color-swatch" id="drawing-color-swatch"></span>
-    </label>
+    <div class="drawing-colors" id="drawing-colors" aria-label="画笔颜色">
+      <button type="button" class="drawing-color" data-drawing-color="#222222" style="--drawing-color:#222222" title="黑色" aria-label="黑色"></button>
+      <button type="button" class="drawing-color" data-drawing-color="#d34b32" style="--drawing-color:#d34b32" title="红色" aria-label="红色"></button>
+      <button type="button" class="drawing-color" data-drawing-color="#2266ff" style="--drawing-color:#2266ff" title="蓝色" aria-label="蓝色"></button>
+      <button type="button" class="drawing-color" data-drawing-color="#20a65a" style="--drawing-color:#20a65a" title="绿色" aria-label="绿色"></button>
+      <button type="button" class="drawing-color" data-drawing-color="#ff9f1c" style="--drawing-color:#ff9f1c" title="橙色" aria-label="橙色"></button>
+      <button type="button" class="drawing-color" data-drawing-color="#8b3dff" style="--drawing-color:#8b3dff" title="紫色" aria-label="紫色"></button>
+    </div>
   </div>`
       : ''
   }
@@ -783,20 +795,27 @@ export function buildPresentationHtml(
       settings.enableDrawing
         ? `
     var drawingCanvas = document.getElementById('drawing-layer');
+    var drawingTools = document.getElementById('drawing-tools');
     var drawingPen = document.getElementById('drawing-pen');
     var drawingEraser = document.getElementById('drawing-eraser');
-    var drawingColor = document.getElementById('drawing-color');
-    var drawingColorSwatch = document.getElementById('drawing-color-swatch');
+    var drawingColorButtons = Array.from(
+      document.querySelectorAll('[data-drawing-color]')
+    );
     var drawingContext = drawingCanvas.getContext('2d');
     var drawingMode = 'off';
     var currentStroke = null;
     var slideDrawings = {};
-    var initialDrawingColor = getComputedStyle(document.documentElement)
-      .getPropertyValue('--accent').trim();
-    if (/^#[0-9a-f]{6}$/i.test(initialDrawingColor)) {
-      drawingColor.value = initialDrawingColor;
+    var drawingColorValue = '#d34b32';
+    function setDrawingColor(color, activate) {
+      drawingColorValue = color;
+      drawingColorButtons.forEach(function (button) {
+        button.classList.toggle(
+          'is-active',
+          button.getAttribute('data-drawing-color') === color
+        );
+      });
+      if (activate !== false) setDrawingMode('pen');
     }
-    drawingColorSwatch.style.setProperty('--drawing-color', drawingColor.value);
     function drawingSlideKey() {
       var indices = Reveal.getIndices();
       return String(indices.h || 0) + '/' + String(indices.v || 0);
@@ -839,6 +858,7 @@ export function buildPresentationHtml(
       drawingCanvas.classList.toggle('is-eraser', mode === 'eraser');
       drawingPen.classList.toggle('is-active', mode === 'pen');
       drawingEraser.classList.toggle('is-active', mode === 'eraser');
+      drawingTools.classList.toggle('is-pen', mode === 'pen');
     }
     function drawingPoint(event) {
       return {
@@ -868,7 +888,7 @@ export function buildPresentationHtml(
         return;
       }
       currentStroke = {
-        color: drawingColor.value,
+        color: drawingColorValue,
         points: [point]
       };
       var key = drawingSlideKey();
@@ -901,9 +921,10 @@ export function buildPresentationHtml(
     drawingEraser.addEventListener('click', function () {
       setDrawingMode(drawingMode === 'eraser' ? 'off' : 'eraser');
     });
-    drawingColor.addEventListener('input', function () {
-      drawingColorSwatch.style.setProperty('--drawing-color', drawingColor.value);
-      setDrawingMode('pen');
+    drawingColorButtons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        setDrawingColor(button.getAttribute('data-drawing-color'), true);
+      });
     });
     document.addEventListener('keydown', function (event) {
       var key = event.key.toLowerCase();
@@ -927,6 +948,7 @@ export function buildPresentationHtml(
       redrawDrawingCanvas();
     });
     window.addEventListener('resize', resizeDrawingCanvas);
+    setDrawingColor(drawingColorValue, false);
     resizeDrawingCanvas();
     `
         : ''
