@@ -167,10 +167,17 @@ const presentationCss = `
     max-height: 430px;
   }
   .reveal .deckdown-column pre {
-    width: fit-content;
+    align-self: stretch;
+    justify-self: stretch;
+    box-sizing: border-box;
+    width: 100%;
     max-width: 100%;
     margin-left: auto;
     margin-right: auto;
+    text-align: left;
+  }
+  .reveal .deckdown-column pre code {
+    text-align: left;
   }
   .reveal .deckdown-column table {
     width: auto;
@@ -219,6 +226,50 @@ const presentationCss = `
   .reveal ul, .reveal ol { margin-left: 1em; }
   .reveal li { margin: .38em 0; line-height: 1.42; }
   .reveal li::marker { color: var(--accent); }
+  .reveal ul.contains-task-list,
+  .reveal ul:has(> li > input[type="checkbox"]) {
+    margin-left: 0;
+    padding-left: 0;
+  }
+  .reveal li.task-list-item,
+  .reveal li:has(> input[type="checkbox"]) {
+    position: relative;
+    list-style: none;
+    padding-left: 1.55em;
+  }
+  .reveal li.task-list-item > input[type="checkbox"],
+  .reveal li > input[type="checkbox"] {
+    position: absolute;
+    left: 0;
+    top: .24em;
+    width: .82em;
+    height: .82em;
+    margin: 0;
+    font-size: inherit;
+    appearance: none;
+    border: .08em solid color-mix(in srgb, var(--accent) 72%, var(--slide-fg));
+    border-radius: .22em;
+    background: color-mix(in srgb, var(--slide-bg) 88%, var(--accent-soft));
+    box-shadow: 0 .08em .18em rgba(0, 0, 0, .12);
+    opacity: 1;
+  }
+  .reveal li.task-list-item > input[type="checkbox"]:checked,
+  .reveal li > input[type="checkbox"]:checked {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+  .reveal li.task-list-item > input[type="checkbox"]:checked::after,
+  .reveal li > input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: .21em;
+    top: .06em;
+    width: .2em;
+    height: .4em;
+    border: solid var(--slide-bg);
+    border-width: 0 .1em .1em 0;
+    transform: rotate(45deg);
+  }
   .reveal blockquote {
     width: min(76%, 900px);
     margin: 1.1em auto;

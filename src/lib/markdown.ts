@@ -193,10 +193,8 @@ function maskManagedToc(source: string) {
 }
 
 export function removeManagedToc(source: string) {
-  const pattern = new RegExp(
-    `\\n*${TOC_START}[\\s\\S]*?${TOC_END}\\n*`,
-  )
-  return source.replace(pattern, '\n\n').replace(/\n{3,}/g, '\n\n')
+  const pattern = new RegExp(`${TOC_START}[\\s\\S]*?${TOC_END}`)
+  return source.replace(pattern, '')
 }
 
 function headingEntries(source: string) {
@@ -228,16 +226,21 @@ export function buildManagedToc(source: string) {
 }
 
 export function syncManagedToc(source: string, enabled: boolean) {
-  const clean = removeManagedToc(source).trimEnd()
-  if (!enabled) return `${clean}\n`
-  const toc = buildManagedToc(clean)
-  const firstHeading = clean.match(/^#\s+.+$/m)
-  if (!firstHeading?.index && firstHeading?.index !== 0) {
-    return `${toc}\n\n${clean}\n`
+  const managedPattern = new RegExp(`${TOC_START}[\\s\\S]*?${TOC_END}`)
+  if (!enabled) return source.replace(managedPattern, '')
+
+  const toc = buildManagedToc(source)
+  if (managedPattern.test(source)) {
+    return source.replace(managedPattern, toc)
   }
-  const lineEnd = clean.indexOf('\n', firstHeading.index)
-  const insertAt = lineEnd < 0 ? clean.length : lineEnd
-  return `${clean.slice(0, insertAt)}\n\n${toc}${clean.slice(insertAt)}\n`
+
+  const firstHeading = source.match(/^#\s+.+$/m)
+  if (!firstHeading?.index && firstHeading?.index !== 0) {
+    return `${toc}\n\n${source}`
+  }
+  const lineEnd = source.indexOf('\n', firstHeading.index)
+  const insertAt = lineEnd < 0 ? source.length : lineEnd
+  return `${source.slice(0, insertAt)}\n\n${toc}${source.slice(insertAt)}`
 }
 
 function hash(value: string) {
@@ -590,8 +593,8 @@ export function compileMarkdown(source: string, includeToc = false): Presentatio
 }
 
 export function formatMarkdownStructure(source: string) {
-  const normalized = source.replace(/\r\n/g, '\n').trim()
-  if (!normalized) return '# 演示标题\n\n## 第一章\n\n### 内容页\n'
+  const normalized = source.replace(/\r\n/g, '\n')
+  if (!normalized.trim()) return '# 演示标题\n\n## 第一章\n\n### 内容页\n'
 
   const sourceHeadings = [...normalized.matchAll(/^(#{1,6})\s+(.+?)\s*$/gm)]
   const multiH1 = sourceHeadings.filter((match) => match[1].length === 1).length > 1
@@ -620,7 +623,8 @@ export function formatMarkdownStructure(source: string) {
   if (!headingCount) return `# 演示标题\n\n## 第一章\n\n### 内容页\n\n${formatted.join('\n')}\n`
   if (!hasChapter) formatted.push('', '## 第一章')
   if (!hasContent) formatted.push('', '### 内容页')
-  return `${formatted.join('\n').replace(/\n{3,}/g, '\n\n')}\n`
+  const result = formatted.join('\n')
+  return result.endsWith('\n') ? result : `${result}\n`
 }
 
 export function slideIndexAtOffset(presentation: Presentation, offset: number) {

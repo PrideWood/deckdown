@@ -18,10 +18,11 @@
     "@codemirror/view": "^6.43.1",
     "@types/dompurify": "^3.0.5",
     "dompurify": "^3.4.11",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "lucide-react": "^1.21.0",
     "marked": "^18.0.5",
-    "pptxgenjs": "^4.0.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "reveal.js": "^6.0.1"

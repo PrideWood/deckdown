@@ -21,8 +21,7 @@
 - 工作台日间/夜间模式及 GitHub 链接预留位
 - 实时 Reveal.js 预览
 - 下载一个可离线播放的 HTML 文件
-- 通过浏览器打印导出文字可选择、链接可点击的 PDF
-- 导出以原生文本、列表、表格和图片组成的可编辑 PPTX
+- 导出高清逐页图片 PDF，完整保留浏览器幻灯片样式
 - 导出 Deckdown 项目 ZIP，包含 `document.md`、`presentation.html`、
   `project.json` 和统一放在 `assets/` 下的素材
 - 从“打开 → 导入 Deckdown 项目”读取 ZIP，恢复文稿、素材、主题和 CSS 设置

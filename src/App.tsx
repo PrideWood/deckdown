@@ -403,12 +403,10 @@ function App() {
     URL.revokeObjectURL(link.href)
   }
 
-  const downloadRendered = async (format: 'pdf' | 'pptx') => {
+  const downloadPdf = async () => {
     setOpenMenu('')
-    setExporting(format)
-    setNotice(`正在生成 ${format.toUpperCase()}…`)
-    const printWindow =
-      format === 'pdf' ? window.open('about:blank', '_blank') : null
+    setExporting('pdf')
+    setNotice('正在生成高清图片 PDF…')
     try {
       const html = buildPresentationHtml(
         presentation,
@@ -418,26 +416,18 @@ function App() {
         settings,
         htmlAssets,
       )
-      const { exportEditablePptx, printSelectablePdf } = await import(
-        './lib/exportPresentation'
+      const { exportImagePdf } = await import('./lib/exportPdf')
+      await exportImagePdf(
+        html,
+        presentation.title,
+        settings.ratio,
+        (current, total) =>
+          setNotice(`正在生成高清图片 PDF（${current}/${total}）…`),
       )
-      if (format === 'pdf') {
-        printSelectablePdf(html, presentation.title, printWindow)
-        setNotice('已打开打印窗口；选择“存储为 PDF”即可保留可选择文字和链接。')
-      } else {
-        await exportEditablePptx(
-          presentation,
-          settings.ratio,
-          theme,
-          imageAssets,
-          settings,
-        )
-        setNotice('PPTX 已导出；文字、列表、表格和图片均为可编辑元素。')
-      }
+      setNotice('高清图片 PDF 已导出。')
     } catch (error) {
-      printWindow?.close()
       console.error(error)
-      setNotice(`${format.toUpperCase()} 导出失败，请稍后重试。`)
+      setNotice('PDF 导出失败，请稍后重试。')
     } finally {
       setExporting('')
       window.setTimeout(() => setNotice(''), 3200)
@@ -881,14 +871,8 @@ function App() {
             <MenuItem
               icon={<Download size={16} />}
               label={exporting === 'pdf' ? '正在生成 PDF…' : '导出 PDF'}
-              hint="文字可选择"
-              onClick={() => void downloadRendered('pdf')}
-            />
-            <MenuItem
-              icon={<Download size={16} />}
-              label={exporting === 'pptx' ? '正在生成 PPTX…' : '导出 PPTX'}
-              hint="内容可编辑"
-              onClick={() => void downloadRendered('pptx')}
+              hint="高清图片"
+              onClick={() => void downloadPdf()}
             />
             <MenuItem
               icon={<FolderOpen size={16} />}

@@ -13,7 +13,7 @@ import {
 } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
 import { searchKeymap } from '@codemirror/search'
-import { EditorState } from '@codemirror/state'
+import { EditorState, Transaction } from '@codemirror/state'
 import {
   drawSelection,
   EditorView,
@@ -28,6 +28,33 @@ interface MarkdownEditorProps {
   onChange: (value: string) => void
   onImageFiles: (files: File[]) => Promise<string>
   onCursorChange: (offset: number) => void
+}
+
+function toggleBold(view: EditorView) {
+  const range = view.state.selection.main
+  const selected = view.state.sliceDoc(range.from, range.to)
+  const isBold =
+    selected.length > 0 &&
+    selected.startsWith('**') &&
+    selected.endsWith('**')
+
+  if (isBold) {
+    const insert = selected.slice(2, -2)
+    view.dispatch({
+      changes: { from: range.from, to: range.to, insert },
+      selection: { anchor: range.from, head: range.from + insert.length },
+    })
+    return true
+  }
+
+  const insert = selected ? `**${selected}**` : '****'
+  const anchor = range.from + 2
+  const head = selected ? anchor + selected.length : anchor
+  view.dispatch({
+    changes: { from: range.from, to: range.to, insert },
+    selection: { anchor, head },
+  })
+  return true
 }
 
 export interface MarkdownEditorHandle {
@@ -87,11 +114,12 @@ export const MarkdownEditor = forwardRef<
       extensions: [
         lineNumbers(),
         highlightActiveLineGutter(),
-        history(),
+        history({ minDepth: 500, newGroupDelay: 180 }),
         drawSelection(),
         highlightActiveLine(),
         markdown(),
         keymap.of([
+          { key: 'Mod-b', run: toggleBold },
           ...defaultKeymap,
           ...historyKeymap,
           ...searchKeymap,
@@ -196,6 +224,7 @@ export const MarkdownEditor = forwardRef<
         to: current.length - suffix,
         insert: value.slice(prefix, value.length - suffix),
       },
+      annotations: Transaction.addToHistory.of(false),
     })
   }, [value])
 
