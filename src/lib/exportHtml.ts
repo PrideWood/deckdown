@@ -136,14 +136,47 @@ const presentationCss = `
     align-items: start;
     gap: 44px;
   }
+  .deckdown-columns[data-column-count="1"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .deckdown-columns[data-column-count="3"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 30px;
+  }
   .deckdown-column {
     min-width: 0;
   }
+  .deckdown-columns[data-column-count="1"] .deckdown-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .deckdown-columns[data-column-count="1"] .deckdown-column ul,
+  .deckdown-columns[data-column-count="1"] .deckdown-column ol {
+    display: inline-block;
+    text-align: left;
+  }
   .deckdown-column > :first-child { margin-top: 0; }
   .deckdown-column > :last-child { margin-bottom: 0; }
-  .deckdown-column img {
+  .reveal .deckdown-column img {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
     max-width: 100%;
     max-height: 430px;
+  }
+  .reveal .deckdown-column pre {
+    width: fit-content;
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .reveal .deckdown-column table {
+    width: auto;
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
   }
   .table-column {
     min-width: 0;

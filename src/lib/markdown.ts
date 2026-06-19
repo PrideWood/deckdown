@@ -64,6 +64,37 @@ function splitAtSeparators(chunk: SourceChunk): SourceChunk[] {
   return parts
 }
 
+function isColumnOpening(line: string) {
+  return /^\s*:::(?:\s+block)?\s*$/.test(line)
+}
+
+function readColumnBlock(lines: string[], start: number) {
+  if (!isColumnOpening(lines[start])) return null
+  const content: string[] = []
+  let cursor = start + 1
+  let fence: string | null = null
+
+  while (cursor < lines.length) {
+    const fenceMatch = lines[cursor].match(/^\s*(```|~~~)/)
+    if (fenceMatch) {
+      fence = fence === fenceMatch[1] ? null : fence || fenceMatch[1]
+      content.push(lines[cursor])
+      cursor += 1
+      continue
+    }
+    if (!fence && /^\s*:::\s*$/.test(lines[cursor])) {
+      return {
+        content: content.join('\n').trim(),
+        end: cursor + 1,
+      }
+    }
+    content.push(lines[cursor])
+    cursor += 1
+  }
+
+  return null
+}
+
 function extractColumnGroups(source: string) {
   const lines = source.split('\n')
   const output: string[] = []
@@ -71,7 +102,7 @@ function extractColumnGroups(source: string) {
   let index = 0
 
   while (index < lines.length) {
-    if (!/^\s*:::\s*block\s*$/.test(lines[index])) {
+    if (!isColumnOpening(lines[index])) {
       output.push(lines[index])
       index += 1
       continue
@@ -81,22 +112,15 @@ function extractColumnGroups(source: string) {
     const blocks: string[] = []
     let cursor = index
 
-    while (cursor < lines.length && /^\s*:::\s*block\s*$/.test(lines[cursor])) {
-      const contentStart = cursor + 1
-      let contentEnd = contentStart
-      while (
-        contentEnd < lines.length &&
-        !/^\s*:::\s*$/.test(lines[contentEnd])
-      ) {
-        contentEnd += 1
-      }
-      if (contentEnd >= lines.length) break
-      blocks.push(lines.slice(contentStart, contentEnd).join('\n').trim())
-      cursor = contentEnd + 1
+    while (cursor < lines.length && isColumnOpening(lines[cursor])) {
+      const block = readColumnBlock(lines, cursor)
+      if (!block) break
+      blocks.push(block.content)
+      cursor = block.end
       while (cursor < lines.length && !lines[cursor].trim()) cursor += 1
     }
 
-    if (blocks.length >= 2) {
+    if (blocks.length >= 1) {
       const groupIndex = groups.push(blocks) - 1
       output.push(
         `<div data-deckdown-columns-placeholder="${groupIndex}"></div>`,
@@ -124,7 +148,7 @@ function renderMarkdown(source: string) {
       const container = document.createElement('div')
       container.className = 'deckdown-columns'
       container.dataset.columnCount = String(
-        columns.groups[groupIndex]?.length || 2,
+        columns.groups[groupIndex]?.length || 1,
       )
       ;(columns.groups[groupIndex] || []).forEach((block) => {
         const column = document.createElement('div')
@@ -141,7 +165,7 @@ function renderMarkdown(source: string) {
     item.setAttribute('data-list-marker', markers[index] || '-')
   })
   return DOMPurify.sanitize(template.innerHTML, {
-    ADD_ATTR: ['target', 'rel', 'data-list-marker'],
+    ADD_ATTR: ['target', 'rel', 'data-list-marker', 'data-column-count'],
     ALLOWED_URI_REGEXP:
       /^(?:(?:https?|mailto|tel|file|data|blob):|[^:]+$)/i,
   })
@@ -277,6 +301,13 @@ function blockWeight(block: string) {
 }
 
 function paginate(section: MarkdownSection, maxWeight = 13): SourceChunk[] {
+  if (extractColumnGroups(section.body).groups.length) {
+    return [{
+      text: section.body,
+      start: section.bodyStart,
+      end: section.end,
+    }]
+  }
   const blocks = splitBlocks(section.body, section.bodyStart)
   if (!blocks.length) {
     return [{ text: '', start: section.start, end: section.end }]
