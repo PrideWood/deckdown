@@ -297,9 +297,9 @@ function renderMarkdown(source: string) {
       })
       placeholder.replaceWith(container)
     })
-  const markers = [...source.matchAll(/^\s*([-+*])\s+/gm)].map(
-    (match) => match[1],
-  )
+  const markers = [
+    ...source.matchAll(/^\s*(?:([-+*])|(\d+)[.)])\s+/gm),
+  ].map((match) => match[1] || '-')
   template.content.querySelectorAll('li').forEach((item, index) => {
     item.setAttribute('data-list-marker', markers[index] || '-')
   })

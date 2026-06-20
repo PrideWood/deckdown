@@ -595,6 +595,43 @@ const presentationCss = `
   }
 `
 
+function applyProgressiveReveal(root: HTMLElement) {
+  // Record source order before the layout code moves media into separate columns.
+  const orderedElements: Element[] = []
+  root.querySelectorAll(':scope > *').forEach((element) => {
+    if (element.classList.contains('deckdown-columns')) {
+      element
+        .querySelectorAll(':scope > .deckdown-column')
+        .forEach((column) => orderedElements.push(...column.children))
+      return
+    }
+    orderedElements.push(element)
+  })
+
+  let fragmentIndex = 0
+  let followsProgressiveList = false
+  const addFragment = (element: Element) => {
+    element.classList.add('fragment', 'fade-up')
+    element.setAttribute('data-fragment-index', String(fragmentIndex))
+    fragmentIndex += 1
+  }
+
+  orderedElements.forEach((element) => {
+    const progressiveItems = [
+      ...element.querySelectorAll(
+        'ol > li, li[data-list-marker="+"], li[data-list-marker="*"]',
+      ),
+    ]
+
+    if (progressiveItems.length) {
+      progressiveItems.forEach(addFragment)
+      followsProgressiveList = true
+    } else if (followsProgressiveList) {
+      addFragment(element)
+    }
+  })
+}
+
 export function buildPresentationHtml(
   presentation: Presentation,
   theme: ThemeName,
@@ -665,15 +702,7 @@ export function buildPresentationHtml(
       }
     })
 
-    if (settings.progressiveReveal) {
-      root
-        .querySelectorAll(
-          'li[data-list-marker="+"], li[data-list-marker="*"]',
-        )
-        .forEach((element) => {
-          element.classList.add('fragment', 'fade-up')
-        })
-    }
+    if (settings.progressiveReveal) applyProgressiveReveal(root)
 
     const heading = root.querySelector(':scope > h1, :scope > h2, :scope > h3, :scope > h4')
     const titleHtml = heading?.outerHTML || ''
