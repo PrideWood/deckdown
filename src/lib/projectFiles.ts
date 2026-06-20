@@ -1,3 +1,5 @@
+import { readLogoSettingFrontmatter } from './markdown'
+
 const DB_NAME = 'ready-slides'
 const ASSET_STORE_NAME = 'assets'
 const MAX_IMAGE_EDGE = 1920
@@ -68,14 +70,19 @@ export async function saveImagesToProject(
   const markdown: string[] = []
 
   for (const file of files.filter((item) => item.type.startsWith('image/'))) {
-    const { blob, extension } = await imageToBlob(file)
-    const fileName = `${safeBaseName(file.name)}.${extension}`
-    const relativePath = `images/${fileName}`
-    await storeBrowserAsset(relativePath, blob)
+    const relativePath = await saveImageAssetToProject(file)
     const alt = file.name.replace(/\.[^.]+$/, '').replace(/[[\]\n\r]/g, '')
     markdown.push(`![${alt || '本地图片'}](${relativePath})`)
   }
   return markdown.length ? `\n\n${markdown.join('\n\n')}\n\n` : ''
+}
+
+export async function saveImageAssetToProject(file: File) {
+  const { blob, extension } = await imageToBlob(file)
+  const fileName = `${safeBaseName(file.name)}.${extension}`
+  const relativePath = `images/${fileName}`
+  await storeBrowserAsset(relativePath, blob)
+  return relativePath
 }
 
 export async function saveHtmlFilesToProject(
@@ -143,6 +150,8 @@ export async function resolveLocalImageAssets(
     const path = match[1]
     if (!/^(?:https?:|data:|blob:|#)/i.test(path)) paths.add(path)
   }
+  const { logo } = readLogoSettingFrontmatter(markdown)
+  if (logo && !/^(?:https?:|data:|blob:|#)/i.test(logo)) paths.add(logo)
 
   const assets: Record<string, string> = {}
   await Promise.all(

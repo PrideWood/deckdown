@@ -93,6 +93,10 @@ function rewriteMarkdownAssets(
       replacements.has(path)
         ? `${before}${replacements.get(path)}${after}`
         : full,
+  ).replace(
+    /^(logo:\s*)(.*?)\s*$/mi,
+    (full, before, path) =>
+      replacements.has(path) ? `${before}${replacements.get(path)}` : full,
   )
 }
 
@@ -126,27 +130,31 @@ export async function exportProjectZip(options: {
   packageAssets(options.imageAssets, packagedImageAssets)
   packageAssets(options.htmlAssets, packagedHtmlAssets)
 
+  const packagedSettings = {
+    ...options.settings,
+    logo: replacements.get(options.settings.logo) || options.settings.logo,
+  }
   const packagedMarkdown = rewriteMarkdownAssets(
     options.markdown,
     replacements,
   )
   const packagedPresentation = compileMarkdown(
     packagedMarkdown,
-    options.settings.includeToc,
+    packagedSettings.includeToc,
   )
   const packagedHtml = buildPresentationHtml(
     packagedPresentation,
     options.theme,
     false,
     packagedAssets,
-    options.settings,
+    packagedSettings,
     packagedAssets,
     {
       format: 'deckdown-html-project',
       version: 1,
       markdown: packagedMarkdown,
       theme: options.theme,
-      settings: options.settings,
+      settings: packagedSettings,
       imageAssets: packagedImageAssets,
       htmlAssets: packagedHtmlAssets,
     },
@@ -156,7 +164,7 @@ export async function exportProjectZip(options: {
     version: 1,
     title: options.title,
     theme: options.theme,
-    settings: options.settings,
+    settings: packagedSettings,
     markdownFile: 'document.md',
     htmlFile: 'presentation.html',
     createdAt: new Date().toISOString(),

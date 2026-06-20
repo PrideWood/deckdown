@@ -25,6 +25,7 @@ import {
   formatMarkdownStructure,
   readBooleanSettingsFrontmatter,
   readDocumentDates,
+  readLogoSettingFrontmatter,
   slideIndexAtOffset,
   syncBooleanSettingsFrontmatter,
   syncManagedToc,
@@ -33,6 +34,7 @@ import {
   resolveLocalHtmlAssets,
   resolveLocalImageAssets,
   saveHtmlFilesToProject,
+  saveImageAssetToProject,
   saveImagesToProject,
 } from './lib/projectFiles'
 import defaultMarkdown from './content/default.md?raw'
@@ -57,17 +59,70 @@ type InsertDialogState =
       title: string
       width: string
     }
+  | {
+      type: 'logo'
+      url: string
+    }
 
 const STORAGE_KEY = 'ready-slides:document'
 const THEME_KEY = 'ready-slides:theme'
 const SETTINGS_KEY = 'ready-slides:settings'
 const APP_MODE_KEY = 'deckdown:app-mode'
-const emptyComponentStyles: ComponentStyles = {
+const logoComponentStyle = `.reveal .deckdown-logo {
+  /* Logo 固定在每张幻灯片的右上角，不参与正文排版 */
+  position: absolute;
+
+  /* 右上角位置：数值越大，距离边缘越远 */
+  top: 24px;
+  right: 50px;
+
+  /* Logo 尺寸：通常只需调整高度，宽度会自动等比缩放 */
+  width: auto;
+  height: 80px;
+
+  /* 默认不限制最大尺寸，便于测试不同 Logo 的最佳大小 */
+  max-width: none;
+  max-height: none;
+
+  /* 视觉与层级 */
+  object-fit: contain;
+  opacity: .92;
+  z-index: 20;
+  box-shadow: none;
+}`
+const blankComponentStyles: ComponentStyles = {
   list: '',
   code: '',
   quote: '',
   table: '',
   image: '',
+  logo: '',
+}
+const defaultComponentStyles: ComponentStyles = {
+  ...blankComponentStyles,
+  logo: logoComponentStyle,
+}
+
+function migrateComponentStyles(
+  saved?: Partial<ComponentStyles>,
+): ComponentStyles {
+  const savedLogo = saved?.logo ?? logoComponentStyle
+  const usesLegacyDefaults =
+    /right:\s*30px;/.test(savedLogo) &&
+    /height:\s*48px;/.test(savedLogo)
+  let logo = savedLogo
+    .replace(/max-width:\s*180px;/, 'max-width: none;')
+    .replace(/max-height:\s*64px;/, 'max-height: none;')
+  if (usesLegacyDefaults) {
+    logo = logo
+      .replace(/right:\s*30px;/, 'right: 50px;')
+      .replace(/height:\s*48px;/, 'height: 80px;')
+  }
+  return {
+    ...defaultComponentStyles,
+    ...saved,
+    logo,
+  }
 }
 const componentStyleTemplates: Record<keyof ComponentStyles, string> = {
   list: `.reveal ul,
@@ -108,6 +163,7 @@ const componentStyleTemplates: Record<keyof ComponentStyles, string> = {
   /* border-radius: 18px; */
   /* box-shadow: 0 22px 52px -14px rgba(0,0,0,.24); */
 }`,
+  logo: logoComponentStyle,
 }
 const componentStyleLabels: Record<keyof ComponentStyles, string> = {
   list: '列表',
@@ -115,6 +171,7 @@ const componentStyleLabels: Record<keyof ComponentStyles, string> = {
   quote: '引用',
   table: '表格',
   image: '图片',
+  logo: 'Logo',
 }
 const defaultSettings: PresentationSettings = {
   includeToc: true,
@@ -128,7 +185,8 @@ const defaultSettings: PresentationSettings = {
   bodyFont: fontChoices[0].value,
   headingScale: 1,
   bodyScale: 1,
-  componentStyles: emptyComponentStyles,
+  logo: '',
+  componentStyles: defaultComponentStyles,
   themeCss: defaultThemeCss,
 }
 
@@ -139,6 +197,7 @@ function settingsFromMarkdown(
   return {
     ...base,
     ...readBooleanSettingsFrontmatter(source),
+    ...readLogoSettingFrontmatter(source),
   }
 }
 
@@ -181,10 +240,7 @@ function loadInitialState() {
     const settings = settingsFromMarkdown(source, {
       ...defaultSettings,
       ...saved,
-      componentStyles: {
-        ...emptyComponentStyles,
-        ...(saved.componentStyles || {}),
-      },
+      componentStyles: migrateComponentStyles(saved.componentStyles),
       themeCss: {
         ...loadThemeCss(saved.themeCss),
       },
@@ -270,23 +326,31 @@ function InsertDialog({
   value,
   error,
   onChange,
+  onChooseLocalLogo,
   onClose,
   onSubmit,
 }: {
   value: InsertDialogState
   error: string
   onChange: (value: InsertDialogState) => void
+  onChooseLocalLogo: () => void
   onClose: () => void
   onSubmit: () => void
 }) {
   const isVideo = value.type === 'video'
+  const isLogo = value.type === 'logo'
+  const title = isLogo
+    ? '插入 Logo'
+    : isVideo
+      ? '插入在线视频'
+      : '插入网页链接'
   return (
     <div className="dialog-backdrop" onMouseDown={onClose}>
       <form
         className="form-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={isVideo ? '插入在线视频' : '插入网页链接'}
+        aria-label={title}
         onMouseDown={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault()
@@ -295,9 +359,11 @@ function InsertDialog({
       >
         <div className="dialog-header">
           <div>
-            <strong>{isVideo ? '插入在线视频' : '插入网页链接'}</strong>
+            <strong>{title}</strong>
             <span>
-              {isVideo
+              {isLogo
+                ? '固定显示在右上角；建议使用透明 PNG，并注意 Logo 与主题颜色的对比。'
+                : isVideo
                 ? '支持 YouTube、Bilibili 和标准 iframe 嵌入地址。'
                 : '链接将插入到当前光标位置。'}
             </span>
@@ -308,18 +374,31 @@ function InsertDialog({
         </div>
         <div className="dialog-fields">
           <label>
-            <span>{isVideo ? '视频地址' : '网页地址'}</span>
+            <span>{isLogo ? '本地图片地址或网址' : isVideo ? '视频地址' : '网页地址'}</span>
             <input
               autoFocus
-              type="url"
-              inputMode="url"
+              type={isLogo ? 'text' : 'url'}
+              inputMode={isLogo ? 'text' : 'url'}
               value={value.url}
-              placeholder="https://"
+              placeholder={isLogo ? 'images/logo.png 或 https://' : 'https://'}
               onFocus={(event) => event.currentTarget.select()}
               onChange={(event) =>
                 onChange({ ...value, url: event.target.value })
               }
             />
+            {isLogo && (
+              <>
+                <small>地址会写入 YAML 的 logo 字段。</small>
+                <button
+                  className="logo-upload-button"
+                  type="button"
+                  onClick={onChooseLocalLogo}
+                >
+                  <ImagePlus size={16} />
+                  选择本地图片
+                </button>
+              </>
+            )}
           </label>
           {value.type === 'web' ? (
             <label>
@@ -332,7 +411,7 @@ function InsertDialog({
                 }
               />
             </label>
-          ) : (
+          ) : value.type === 'video' ? (
             <>
               <label>
                 <span>视频标题</span>
@@ -356,7 +435,7 @@ function InsertDialog({
                 <small>纯数字按像素处理，也支持百分比和 CSS 长度。</small>
               </label>
             </>
-          )}
+          ) : null}
           {error && <div className="dialog-error">{error}</div>}
         </div>
         <div className="dialog-actions">
@@ -364,7 +443,7 @@ function InsertDialog({
             取消
           </button>
           <button className="primary" type="submit">
-            插入
+            {isLogo ? '应用 Logo' : '插入'}
           </button>
         </div>
       </form>
@@ -410,6 +489,7 @@ function App() {
   const projectHtmlInput = useRef<HTMLInputElement>(null)
   const zipInput = useRef<HTMLInputElement>(null)
   const imageInput = useRef<HTMLInputElement>(null)
+  const logoInput = useRef<HTMLInputElement>(null)
   const htmlInput = useRef<HTMLInputElement>(null)
   const previewRef = useRef<HTMLIFrameElement>(null)
   const activeSlideIndexRef = useRef(0)
@@ -723,10 +803,9 @@ function App() {
       ? {
           ...defaultSettings,
           ...migrateSavedSettings(imported.settings),
-          componentStyles: {
-            ...emptyComponentStyles,
-            ...(imported.settings.componentStyles || {}),
-          },
+          componentStyles: migrateComponentStyles(
+            imported.settings.componentStyles,
+          ),
           themeCss: loadThemeCss(imported.settings.themeCss),
         }
       : settings
@@ -844,8 +923,53 @@ function App() {
     })
   }
 
+  const insertLogo = () => {
+    setInsertDialogError('')
+    setInsertDialog({
+      type: 'logo',
+      url: settings.logo,
+    })
+  }
+
+  const chooseLogoFile = async (files?: FileList | null) => {
+    const file = files?.[0]
+    if (!file) return
+    setNotice('正在处理本地 Logo…')
+    try {
+      const path = await saveImageAssetToProject(file)
+      setInsertDialog({ type: 'logo', url: path })
+      setNotice('本地 Logo 已保存，请点击“应用 Logo”。')
+    } catch {
+      setNotice('Logo 图片处理失败，请换一张图片重试。')
+    }
+    window.setTimeout(() => setNotice(''), 2600)
+  }
+
   const submitInsertDialog = () => {
     if (!insertDialog) return
+    if (insertDialog.type === 'logo') {
+      const logo = insertDialog.url.trim()
+      if (
+        logo &&
+        !/^(?:https?:\/\/|data:image\/|blob:|[^:\r\n]+$)/i.test(logo)
+      ) {
+        setInsertDialogError(
+          '请填写完整的 http://、https:// 地址，或选择 images/ 下的本地图片。',
+        )
+        return
+      }
+      updateSettings({
+        logo,
+        componentStyles: {
+          ...settings.componentStyles,
+          logo: settings.componentStyles.logo || logoComponentStyle,
+        },
+      })
+      setInsertDialog(null)
+      setNotice(logo ? 'Logo 已应用到全部幻灯片。' : 'Logo 已移除。')
+      window.setTimeout(() => setNotice(''), 2600)
+      return
+    }
     let url: URL
     try {
       url = new URL(insertDialog.url)
@@ -926,7 +1050,10 @@ function App() {
   }
 
   const updateMarkdown = (value: string) => {
-    const frontmatterSettings = readBooleanSettingsFrontmatter(value)
+    const frontmatterSettings = {
+      ...readBooleanSettingsFrontmatter(value),
+      ...readLogoSettingFrontmatter(value),
+    }
     pendingModifiedRef.current = true
     if (Object.keys(frontmatterSettings).length) {
       setSettings((current) => ({
@@ -1063,6 +1190,11 @@ function App() {
               onClick={() => imageInput.current?.click()}
             />
             <MenuItem
+              label="插入 Logo"
+              hint="幻灯片母版"
+              onClick={insertLogo}
+            />
+            <MenuItem
               label="插入 HTML 文件"
               hint="嵌入演示"
               onClick={() => htmlInput.current?.click()}
@@ -1086,6 +1218,16 @@ function App() {
             accept="image/*"
             onChange={(event) => {
               void chooseImages(event.target.files)
+              event.target.value = ''
+            }}
+          />
+          <input
+            ref={logoInput}
+            hidden
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              void chooseLogoFile(event.target.files)
               event.target.value = ''
             }}
           />
@@ -1396,6 +1538,7 @@ function App() {
             setInsertDialog(value)
             setInsertDialogError('')
           }}
+          onChooseLocalLogo={() => logoInput.current?.click()}
           onClose={() => {
             setInsertDialog(null)
             setInsertDialogError('')
@@ -1592,7 +1735,7 @@ function App() {
               <button
                 onClick={() => {
                   updateSettings({
-                    componentStyles: emptyComponentStyles,
+                    componentStyles: blankComponentStyles,
                     themeCss: defaultThemeCss,
                   })
                 }}

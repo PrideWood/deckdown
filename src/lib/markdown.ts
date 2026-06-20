@@ -96,9 +96,17 @@ export function readBooleanSettingsFrontmatter(source: string) {
   return result
 }
 
+export function readLogoSettingFrontmatter(source: string) {
+  const normalized = source.replace(/\r\n/g, '\n')
+  const frontmatter = normalized.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)
+  if (!frontmatter) return {}
+  const match = frontmatter[1].match(/^logo:\s*(.*?)\s*$/mi)
+  return match ? { logo: match[1] } : {}
+}
+
 export function syncBooleanSettingsFrontmatter(
   source: string,
-  settings: Pick<PresentationSettings, BooleanSettingKey>,
+  settings: Pick<PresentationSettings, BooleanSettingKey | 'logo'>,
   dates?: Partial<DocumentDates>,
 ) {
   const normalized = source.replace(/\r\n/g, '\n')
@@ -116,6 +124,7 @@ export function syncBooleanSettingsFrontmatter(
     `date created: ${documentDates.created}`,
     `date modified: ${documentDates.modified}`,
     ...booleanSettingKeys.map((key) => `${key}: ${values[key]}`),
+    `logo: ${settings.logo.replace(/[\r\n]/g, '').trim()}`,
   ]
 
   if (!frontmatter) {
@@ -126,6 +135,7 @@ export function syncBooleanSettingsFrontmatter(
     'date created',
     'date modified',
     ...booleanSettingKeys,
+    'logo',
     ...legacyBooleanSettingKeys,
   ]
   const preservedLines = frontmatter[1].split('\n').filter(

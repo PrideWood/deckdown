@@ -35,6 +35,7 @@ export interface ComponentStyles {
   quote: string
   table: string
   image: string
+  logo: string
 }
 
 export interface PresentationSettings {
@@ -49,6 +50,7 @@ export interface PresentationSettings {
   bodyFont: string
   headingScale: number
   bodyScale: number
+  logo: string
   componentStyles: ComponentStyles
   themeCss: Record<string, string>
 }

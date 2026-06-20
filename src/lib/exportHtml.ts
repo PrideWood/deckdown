@@ -38,6 +38,22 @@ const presentationCss = `
     padding: 54px 70px;
     height: 100%;
   }
+  .reveal .deckdown-logo {
+    position: absolute;
+    z-index: 20;
+    top: 24px;
+    right: 50px;
+    width: auto;
+    height: 80px;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    object-fit: contain;
+    opacity: .92;
+    box-shadow: none;
+  }
   .reveal.overview .slides section.present:not(.stack) {
     outline: 14px solid var(--accent);
     outline-offset: 10px;
@@ -343,7 +359,7 @@ const presentationCss = `
     border-radius: 18px;
     box-shadow: none;
   }
-  .reveal.has-image-shadow img {
+  .reveal.has-image-shadow img:not(.deckdown-logo) {
     box-shadow: 0 22px 52px -14px rgba(0,0,0,.24);
   }
   .reveal .media-column iframe,
@@ -386,7 +402,7 @@ const presentationCss = `
     color: inherit;
     background: transparent;
   }
-  .reveal.theme-custom.has-image-shadow img {
+  .reveal.theme-custom.has-image-shadow img:not(.deckdown-logo) {
     box-shadow: 0 22px 52px -14px rgba(0,0,0,.24);
   }
   .reveal.theme-custom li::marker { color: inherit; }
@@ -649,12 +665,14 @@ export function buildPresentationHtml(
     bodyFont: '',
     headingScale: 1,
     bodyScale: 1,
+    logo: '',
     componentStyles: {
       list: '',
       code: '',
       quote: '',
       table: '',
       image: '',
+      logo: '',
     },
     themeCss: {},
   },
@@ -810,8 +828,15 @@ export function buildPresentationHtml(
           : full,
     )
 
+  const logoSource = settings.logo
+    ? imageAssets[settings.logo] || settings.logo
+    : ''
+  const logoHtml = logoSource
+    ? `<img class="deckdown-logo" src="${escapeHtml(logoSource)}" alt="">`
+    : ''
   const renderSlide = (slide: Slide, flatIndex: number) => `
         <section id="${escapeHtml(slide.anchor)}" class="slide-${slide.kind} ${slide.title ? 'slide-has-title' : 'slide-no-title'}" data-slide-index="${flatIndex}" data-transition="fade">
+          ${logoHtml}
           ${buildSlideLayout(resolveHtmlLinks(resolveImages(
             slide.continuation && slide.title
               ? slide.html.replace(
