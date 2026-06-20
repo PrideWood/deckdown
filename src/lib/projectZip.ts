@@ -108,16 +108,23 @@ export async function exportProjectZip(options: {
   const usedPaths = new Set<string>()
   const replacements = new Map<string, string>()
   const packagedAssets: Record<string, string> = {}
+  const packagedImageAssets: Record<string, string> = {}
+  const packagedHtmlAssets: Record<string, string> = {}
 
-  Object.entries({
-    ...options.imageAssets,
-    ...options.htmlAssets,
-  }).forEach(([sourcePath, dataUrl]) => {
-    const packagedPath = safeAssetName(sourcePath, usedPaths)
-    replacements.set(sourcePath, packagedPath)
-    packagedAssets[packagedPath] = dataUrl
-    zip.file(packagedPath, dataUrlToBlob(dataUrl))
-  })
+  const packageAssets = (
+    assets: Record<string, string>,
+    target: Record<string, string>,
+  ) => {
+    Object.entries(assets).forEach(([sourcePath, dataUrl]) => {
+      const packagedPath = safeAssetName(sourcePath, usedPaths)
+      replacements.set(sourcePath, packagedPath)
+      packagedAssets[packagedPath] = dataUrl
+      target[packagedPath] = dataUrl
+      zip.file(packagedPath, dataUrlToBlob(dataUrl))
+    })
+  }
+  packageAssets(options.imageAssets, packagedImageAssets)
+  packageAssets(options.htmlAssets, packagedHtmlAssets)
 
   const packagedMarkdown = rewriteMarkdownAssets(
     options.markdown,
@@ -134,6 +141,15 @@ export async function exportProjectZip(options: {
     packagedAssets,
     options.settings,
     packagedAssets,
+    {
+      format: 'deckdown-html-project',
+      version: 1,
+      markdown: packagedMarkdown,
+      theme: options.theme,
+      settings: options.settings,
+      imageAssets: packagedImageAssets,
+      htmlAssets: packagedHtmlAssets,
+    },
   )
   const manifest: ProjectManifest = {
     format: 'deckdown-project',

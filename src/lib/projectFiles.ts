@@ -1,30 +1,12 @@
 const DB_NAME = 'ready-slides'
-const STORE_NAME = 'handles'
 const ASSET_STORE_NAME = 'assets'
-const PROJECT_HANDLE_KEY = 'project-directory'
 const MAX_IMAGE_EDGE = 1920
 const JPEG_QUALITY = 0.88
-
-declare global {
-  interface Window {
-    showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>
-  }
-}
-
-interface PermissionCapableDirectoryHandle extends FileSystemDirectoryHandle {
-  queryPermission: (options: { mode: 'read' | 'readwrite' }) => Promise<PermissionState>
-  requestPermission: (options: {
-    mode: 'read' | 'readwrite'
-  }) => Promise<PermissionState>
-}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 2)
     request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(STORE_NAME)) {
-        request.result.createObjectStore(STORE_NAME)
-      }
       if (!request.result.objectStoreNames.contains(ASSET_STORE_NAME)) {
         request.result.createObjectStore(ASSET_STORE_NAME)
       }
@@ -32,55 +14,6 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
   })
-}
-
-async function storeProjectHandle(handle: FileSystemDirectoryHandle) {
-  const database = await openDatabase()
-  await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(STORE_NAME, 'readwrite')
-    transaction.objectStore(STORE_NAME).put(handle, PROJECT_HANDLE_KEY)
-    transaction.oncomplete = () => resolve()
-    transaction.onerror = () => reject(transaction.error)
-  })
-  database.close()
-}
-
-export async function loadProjectHandle() {
-  const database = await openDatabase()
-  const handle = await new Promise<FileSystemDirectoryHandle | undefined>(
-    (resolve, reject) => {
-      const request = database
-        .transaction(STORE_NAME, 'readonly')
-        .objectStore(STORE_NAME)
-        .get(PROJECT_HANDLE_KEY)
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
-    },
-  )
-  database.close()
-  return handle
-}
-
-export async function chooseProjectFolder() {
-  if (!window.showDirectoryPicker) {
-    throw new Error('当前浏览器不支持直接写入本地文件夹。请使用 Chromium 内核浏览器。')
-  }
-  const handle = await window.showDirectoryPicker()
-  await storeProjectHandle(handle)
-  return handle
-}
-
-export function supportsProjectFolder() {
-  return typeof window.showDirectoryPicker === 'function'
-}
-
-async function ensurePermission(handle: FileSystemDirectoryHandle, write = false) {
-  const permissionHandle = handle as PermissionCapableDirectoryHandle
-  const options = {
-    mode: write ? 'readwrite' : 'read',
-  } as const
-  if ((await permissionHandle.queryPermission(options)) === 'granted') return true
-  return (await permissionHandle.requestPermission(options)) === 'granted'
 }
 
 async function imageToBlob(file: File): Promise<{ blob: Blob; extension: string }> {
@@ -131,28 +64,14 @@ function safeBaseName(fileName: string) {
 
 export async function saveImagesToProject(
   files: File[],
-  project?: FileSystemDirectoryHandle,
 ) {
-  if (project && !(await ensurePermission(project, true))) {
-    throw new Error('没有项目文件夹写入权限。')
-  }
-  const imageFolder = project
-    ? await project.getDirectoryHandle('images', { create: true })
-    : undefined
   const markdown: string[] = []
 
   for (const file of files.filter((item) => item.type.startsWith('image/'))) {
     const { blob, extension } = await imageToBlob(file)
     const fileName = `${safeBaseName(file.name)}.${extension}`
     const relativePath = `images/${fileName}`
-    if (imageFolder) {
-      const fileHandle = await imageFolder.getFileHandle(fileName, { create: true })
-      const writer = await fileHandle.createWritable()
-      await writer.write(blob)
-      await writer.close()
-    } else {
-      await storeBrowserAsset(relativePath, blob)
-    }
+    await storeBrowserAsset(relativePath, blob)
     const alt = file.name.replace(/\.[^.]+$/, '').replace(/[[\]\n\r]/g, '')
     markdown.push(`![${alt || '本地图片'}](${relativePath})`)
   }
@@ -161,14 +80,7 @@ export async function saveImagesToProject(
 
 export async function saveHtmlFilesToProject(
   files: File[],
-  project?: FileSystemDirectoryHandle,
 ) {
-  if (project && !(await ensurePermission(project, true))) {
-    throw new Error('没有项目文件夹写入权限。')
-  }
-  const htmlFolder = project
-    ? await project.getDirectoryHandle('html', { create: true })
-    : undefined
   const links: string[] = []
   const assets: Record<string, string> = {}
 
@@ -177,12 +89,6 @@ export async function saveHtmlFilesToProject(
   )) {
     const fileName = `${safeBaseName(file.name)}.html`
     const relativePath = `html/${fileName}`
-    if (htmlFolder) {
-      const fileHandle = await htmlFolder.getFileHandle(fileName, { create: true })
-      const writer = await fileHandle.createWritable()
-      await writer.write(file)
-      await writer.close()
-    }
     await storeBrowserAsset(relativePath, file)
     assets[relativePath] = await readAsDataUrl(file)
     const label = file.name.replace(/\.html?$/i, '').replace(/[[\]\n\r]/g, '')
@@ -229,25 +135,8 @@ function readAsDataUrl(file: Blob): Promise<string> {
   })
 }
 
-async function getFileByPath(
-  root: FileSystemDirectoryHandle,
-  relativePath: string,
-) {
-  const parts = decodeURIComponent(relativePath)
-    .replace(/^[./]+/, '')
-    .split('/')
-    .filter(Boolean)
-  let directory = root
-  for (const part of parts.slice(0, -1)) {
-    directory = await directory.getDirectoryHandle(part)
-  }
-  const fileHandle = await directory.getFileHandle(parts.at(-1) || '')
-  return fileHandle.getFile()
-}
-
 export async function resolveLocalImageAssets(
   markdown: string,
-  project?: FileSystemDirectoryHandle,
 ) {
   const paths = new Set<string>()
   for (const match of markdown.matchAll(/!\[[^\]]*]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g)) {
@@ -259,16 +148,7 @@ export async function resolveLocalImageAssets(
   await Promise.all(
     [...paths].map(async (path) => {
       try {
-        let file: Blob | undefined
-        if (project) {
-          try {
-            if (!(await ensurePermission(project))) throw new Error('No permission')
-            file = await getFileByPath(project, path)
-          } catch {
-            file = undefined
-          }
-        }
-        file ||= await loadBrowserAsset(path)
+        let file = await loadBrowserAsset(path)
         if (!file) {
           const response = await fetch(path)
           if (response.ok) file = await response.blob()
@@ -284,7 +164,6 @@ export async function resolveLocalImageAssets(
 
 export async function resolveLocalHtmlAssets(
   markdown: string,
-  project?: FileSystemDirectoryHandle,
 ) {
   const paths = new Set<string>()
   for (const match of markdown.matchAll(/\[[^\]]*]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g)) {
@@ -298,16 +177,7 @@ export async function resolveLocalHtmlAssets(
   await Promise.all(
     [...paths].map(async (path) => {
       try {
-        let file: Blob | undefined
-        if (project) {
-          try {
-            if (!(await ensurePermission(project))) throw new Error('No permission')
-            file = await getFileByPath(project, path)
-          } catch {
-            file = undefined
-          }
-        }
-        file ||= await loadBrowserAsset(path)
+        let file = await loadBrowserAsset(path)
         if (!file) {
           const response = await fetch(path)
           if (response.ok) file = await response.blob()

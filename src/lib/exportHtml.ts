@@ -5,6 +5,16 @@ import highlightCss from '../../node_modules/reveal.js/dist/plugin/highlight/mon
 import type { Presentation, PresentationSettings, Slide } from './types'
 import { themeStyles, type ThemeName } from './themes'
 
+export interface EmbeddedDeckdownProject {
+  format: 'deckdown-html-project'
+  version: 1
+  markdown: string
+  theme: ThemeName
+  settings: PresentationSettings
+  imageAssets: Record<string, string>
+  htmlAssets: Record<string, string>
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, '&amp;')
@@ -71,7 +81,7 @@ const presentationCss = `
     min-height: 0;
     display: flex;
     align-items: center;
-    overflow: hidden;
+    overflow: visible;
   }
   .slide-body-inner {
     width: 100%;
@@ -195,7 +205,7 @@ const presentationCss = `
   .table-column {
     min-width: 0;
     max-height: 100%;
-    overflow: hidden;
+    overflow: visible;
   }
   .table-column table {
     width: 100%;
@@ -330,7 +340,10 @@ const presentationCss = `
     max-width: 100%;
     object-fit: contain;
     border-radius: 18px;
-    box-shadow: 0 18px 60px rgba(0,0,0,.16);
+    box-shadow: none;
+  }
+  .reveal.has-image-shadow img {
+    box-shadow: 0 22px 52px -14px rgba(0,0,0,.24);
   }
   .reveal table { font-size: .72em; }
   .reveal table th {
@@ -353,6 +366,9 @@ const presentationCss = `
   .reveal.theme-custom blockquote {
     color: inherit;
     background: transparent;
+  }
+  .reveal.theme-custom.has-image-shadow img {
+    box-shadow: 0 22px 52px -14px rgba(0,0,0,.24);
   }
   .reveal.theme-custom li::marker { color: inherit; }
   .reveal.theme-custom table th {
@@ -564,6 +580,7 @@ export function buildPresentationHtml(
   settings: PresentationSettings = {
     includeToc: false,
     progressiveReveal: false,
+    imageShadow: true,
     hideNavigationControls: false,
     enableDrawing: false,
     ratio: '16:9',
@@ -581,6 +598,7 @@ export function buildPresentationHtml(
     themeCss: {},
   },
   htmlAssets: Record<string, string> = {},
+  projectData?: EmbeddedDeckdownProject,
 ) {
   const resolveImages = (html: string) =>
     html.replace(/(<img\b[^>]*\bsrc=")([^"]+)(")/g, (full, before, source, after) => {
@@ -618,10 +636,10 @@ export function buildPresentationHtml(
     if (settings.progressiveReveal) {
       root
         .querySelectorAll(
-          'li[data-list-marker="+"] , li[data-list-marker="*"], img, table',
+          'li[data-list-marker="+"], li[data-list-marker="*"]',
         )
         .forEach((element) => {
-        element.classList.add('fragment', 'fade-up')
+          element.classList.add('fragment', 'fade-up')
         })
     }
 
@@ -772,6 +790,9 @@ export function buildPresentationHtml(
     /</g,
     '\\u003c',
   )
+  const serializedProjectData = projectData
+    ? JSON.stringify(projectData).replace(/</g, '\\u003c')
+    : ''
   const customComponentCss = Object.values(settings.componentStyles || {})
     .join('\n')
     .replace(/<\/style/gi, '<\\/style')
@@ -795,7 +816,12 @@ export function buildPresentationHtml(
   <style id="deckdown-component-styles">${customComponentCss}</style>
 </head>
 <body>
-  <div class="reveal theme-${theme}${isPreview ? ' is-preview' : ''}">
+  ${
+    projectData
+      ? `<script id="deckdown-project-data" type="application/json">${serializedProjectData}</script>`
+      : ''
+  }
+  <div class="reveal theme-${theme}${settings.imageShadow ? ' has-image-shadow' : ''}${isPreview ? ' is-preview' : ''}">
     <div class="slides">${slides}</div>
   </div>
   ${

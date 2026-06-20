@@ -1,21 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Braces,
-  Download,
-  Edit3,
-  EyeOff,
-  ExternalLink,
   FileText,
-  FolderCog,
   FolderOpen,
   ImagePlus,
   Layout,
-  List,
   Moon,
+  PanelBottomClose,
+  PanelBottomOpen,
   Play,
+  RectangleHorizontal,
   RotateCcw,
+  SquareArrowOutUpRight,
   Sun,
-  Type,
   Wand2,
 } from 'lucide-react'
 import {
@@ -30,13 +26,10 @@ import {
   syncManagedToc,
 } from './lib/markdown'
 import {
-  chooseProjectFolder,
-  loadProjectHandle,
   resolveLocalHtmlAssets,
   resolveLocalImageAssets,
   saveHtmlFilesToProject,
   saveImagesToProject,
-  supportsProjectFolder,
 } from './lib/projectFiles'
 import defaultMarkdown from './content/default.md?raw'
 import {
@@ -96,7 +89,7 @@ const componentStyleTemplates: Record<keyof ComponentStyles, string> = {
 }`,
   image: `.reveal img {
   /* border-radius: 18px; */
-  /* box-shadow: 0 18px 60px rgba(0,0,0,.16); */
+  /* box-shadow: 0 22px 52px -14px rgba(0,0,0,.24); */
 }`,
 }
 const componentStyleLabels: Record<keyof ComponentStyles, string> = {
@@ -109,6 +102,7 @@ const componentStyleLabels: Record<keyof ComponentStyles, string> = {
 const defaultSettings: PresentationSettings = {
   includeToc: true,
   progressiveReveal: true,
+  imageShadow: true,
   hideNavigationControls: false,
   enableDrawing: false,
   ratio: '16:9',
@@ -155,7 +149,10 @@ function RibbonMenu({
   children: ReactNode
 }) {
   return (
-    <div className={`ribbon-menu ${active ? 'is-open' : ''}`}>
+    <div
+      className={`ribbon-menu ${active ? 'is-open' : ''}`}
+      data-menu-id={id}
+    >
       <button className="ribbon-button" onClick={() => onToggle(id)}>
         {icon}
         <span>{label}</span>
@@ -166,19 +163,16 @@ function RibbonMenu({
 }
 
 function MenuItem({
-  icon,
   label,
   hint,
   onClick,
 }: {
-  icon?: ReactNode
   label: string
   hint?: string
   onClick?: () => void
 }) {
   return (
     <button className="menu-item" onClick={onClick}>
-      <span className="menu-icon">{icon}</span>
       <span>{label}</span>
       {hint && <span className="menu-hint">{hint}</span>}
     </button>
@@ -241,6 +235,7 @@ function App() {
   const [activeStyleComponent, setActiveStyleComponent] =
     useState<keyof ComponentStyles | 'global'>('global')
   const fileInput = useRef<HTMLInputElement>(null)
+  const projectHtmlInput = useRef<HTMLInputElement>(null)
   const zipInput = useRef<HTMLInputElement>(null)
   const imageInput = useRef<HTMLInputElement>(null)
   const htmlInput = useRef<HTMLInputElement>(null)
@@ -249,8 +244,7 @@ function App() {
   const editorRef = useRef<MarkdownEditorHandle>(null)
   const [notice, setNotice] = useState('')
   const [cursorOffset, setCursorOffset] = useState(0)
-  const [projectFolder, setProjectFolder] =
-    useState<FileSystemDirectoryHandle>()
+  const [mobileEditorOpen, setMobileEditorOpen] = useState(false)
   const [imageAssets, setImageAssets] = useState<Record<string, string>>({})
   const [htmlAssets, setHtmlAssets] = useState<Record<string, string>>({})
   const [exporting, setExporting] = useState('')
@@ -277,14 +271,8 @@ function App() {
   )
 
   useEffect(() => {
-    void loadProjectHandle()
-      .then(setProjectFolder)
-      .catch(() => undefined)
-  }, [])
-
-  useEffect(() => {
     let cancelled = false
-    void resolveLocalImageAssets(markdown, projectFolder)
+    void resolveLocalImageAssets(markdown)
       .then((assets) => {
         if (!cancelled) setImageAssets(assets)
       })
@@ -294,11 +282,11 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [markdown, projectFolder])
+  }, [markdown])
 
   useEffect(() => {
     let cancelled = false
-    void resolveLocalHtmlAssets(markdown, projectFolder)
+    void resolveLocalHtmlAssets(markdown)
       .then((assets) => {
         if (!cancelled) setHtmlAssets(assets)
       })
@@ -308,7 +296,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [markdown, projectFolder])
+  }, [markdown])
 
   useEffect(() => {
     activeSlideIndexRef.current = activeSlideIndex
@@ -377,6 +365,15 @@ function App() {
   }, [appDarkMode])
 
   useEffect(() => {
+    const landscape = window.matchMedia('(orientation: landscape)')
+    const collapseEditor = (event: MediaQueryListEvent) => {
+      if (event.matches) setMobileEditorOpen(false)
+    }
+    landscape.addEventListener('change', collapseEditor)
+    return () => landscape.removeEventListener('change', collapseEditor)
+  }, [])
+
+  useEffect(() => {
     const close = () => setOpenMenu('')
     window.addEventListener('click', close)
     return () => window.removeEventListener('click', close)
@@ -394,6 +391,15 @@ function App() {
       imageAssets,
       settings,
       htmlAssets,
+      {
+        format: 'deckdown-html-project',
+        version: 1,
+        markdown,
+        theme,
+        settings,
+        imageAssets,
+        htmlAssets,
+      },
     )
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
     const link = document.createElement('a')
@@ -471,9 +477,93 @@ function App() {
     window.open(URL.createObjectURL(blob), '_blank', 'noopener,noreferrer')
   }
 
+  const openMobilePresentation = () => {
+    const html = buildPresentationHtml(
+      presentation,
+      theme,
+      false,
+      imageAssets,
+      settings,
+      htmlAssets,
+    ).replace(
+      '</body>',
+      `<script>
+        (function () {
+          async function requestLandscape() {
+            try {
+              if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+                await document.documentElement.requestFullscreen();
+              }
+            } catch (error) {}
+            try {
+              if (screen.orientation && screen.orientation.lock) {
+                await screen.orientation.lock('landscape');
+              }
+            } catch (error) {}
+          }
+          requestLandscape();
+          window.addEventListener('pointerdown', requestLandscape, { once: true });
+        })();
+      </script></body>`,
+    )
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const opened = window.open(url, '_blank')
+    if (!opened) {
+      URL.revokeObjectURL(url)
+      setNotice('浏览器阻止了播放页面，请允许打开新窗口后重试。')
+      window.setTimeout(() => setNotice(''), 3200)
+      return
+    }
+    opened.opener = null
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
+
   const importMarkdown = async (file?: File) => {
     if (!file) return
     setMarkdown(syncManagedToc(await file.text(), settings.includeToc))
+  }
+
+  const restoreImportedProject = (imported: {
+    markdown: string
+    theme?: ThemeName
+    settings?: PresentationSettings
+    assetCount: number
+  }) => {
+    const importedSettings = imported.settings
+      ? {
+          ...defaultSettings,
+          ...imported.settings,
+          componentStyles: {
+            ...emptyComponentStyles,
+            ...(imported.settings.componentStyles || {}),
+          },
+          themeCss: loadThemeCss(imported.settings.themeCss),
+        }
+      : settings
+    setSettings(importedSettings)
+    if (imported.theme && imported.theme in themeLabels) {
+      setTheme(imported.theme)
+    }
+    setMarkdown(
+      syncManagedToc(imported.markdown, importedSettings.includeToc),
+    )
+  }
+
+  const importHtmlProject = async (file?: File) => {
+    if (!file) return
+    setOpenMenu('')
+    setNotice('正在读取 HTML 项目…')
+    try {
+      const { importDeckdownHtml } = await import('./lib/importHtml')
+      const imported = await importDeckdownHtml(file)
+      restoreImportedProject(imported)
+      setNotice(`HTML 项目已恢复，共载入 ${imported.assetCount} 个素材文件。`)
+    } catch (error) {
+      console.error(error)
+      setNotice((error as Error).message || 'HTML 项目导入失败。')
+    }
+    window.setTimeout(() => setNotice(''), 3600)
   }
 
   const importProject = async (file?: File) => {
@@ -483,28 +573,7 @@ function App() {
     try {
       const { importProjectZip } = await import('./lib/projectZip')
       const imported = await importProjectZip(file)
-      const importedSettings = imported.settings
-        ? {
-            ...defaultSettings,
-            ...imported.settings,
-            componentStyles: {
-              ...emptyComponentStyles,
-              ...(imported.settings.componentStyles || {}),
-            },
-            themeCss: loadThemeCss(imported.settings.themeCss),
-          }
-        : settings
-      setSettings(importedSettings)
-      if (imported.theme && imported.theme in themeLabels) {
-        setTheme(imported.theme)
-      }
-      setProjectFolder(undefined)
-      setMarkdown(
-        syncManagedToc(
-          imported.markdown,
-          importedSettings.includeToc,
-        ),
-      )
+      restoreImportedProject(imported)
       setNotice(`项目已恢复，共载入 ${imported.assetCount} 个素材文件。`)
     } catch (error) {
       console.error(error)
@@ -516,12 +585,10 @@ function App() {
   const insertImageFiles = async (files: File[]) => {
     setNotice('正在处理本地图片…')
     try {
-      const imageMarkdown = await saveImagesToProject(files, projectFolder)
+      const imageMarkdown = await saveImagesToProject(files)
       setNotice(
         imageMarkdown
-          ? projectFolder
-            ? `已将 ${files.length} 张图片保存到 images/。`
-            : `已将 ${files.length} 张图片保存到浏览器素材库，Markdown 使用 images/ 相对路径。`
+          ? `已将 ${files.length} 张图片保存到浏览器素材库，Markdown 使用 images/ 相对路径。`
           : '没有找到可用的图片。',
       )
       window.setTimeout(() => setNotice(''), 2600)
@@ -529,23 +596,6 @@ function App() {
     } catch {
       setNotice('图片处理失败，请换一张图片重试。')
       return ''
-    }
-  }
-
-  const selectProjectFolder = async () => {
-    if (!supportsProjectFolder()) {
-      setNotice('当前浏览器使用内置素材库；Markdown 仍使用 images/ 相对路径。')
-      return
-    }
-    try {
-      const handle = await chooseProjectFolder()
-      setProjectFolder(handle)
-      setNotice(`项目文件夹：${handle.name}`)
-      window.setTimeout(() => setNotice(''), 2400)
-    } catch (error) {
-      if ((error as DOMException).name !== 'AbortError') {
-        setNotice((error as Error).message || '无法打开项目文件夹。')
-      }
     }
   }
 
@@ -586,17 +636,10 @@ function App() {
     if (!files?.length) return
     setNotice('正在处理 HTML 文件…')
     try {
-      const result = await saveHtmlFilesToProject(
-        Array.from(files),
-        projectFolder,
-      )
+      const result = await saveHtmlFilesToProject(Array.from(files))
       setHtmlAssets((current) => ({ ...current, ...result.assets }))
       editorRef.current?.insertText(result.markdown)
-      setNotice(
-        projectFolder
-          ? `已将 ${files.length} 个 HTML 文件保存到 html/。`
-          : `已将 ${files.length} 个 HTML 文件嵌入浏览器素材库。`,
-      )
+      setNotice(`已将 ${files.length} 个 HTML 文件嵌入浏览器素材库。`)
     } catch {
       setNotice('HTML 文件处理失败，请重试。')
     }
@@ -629,6 +672,14 @@ function App() {
 
   return (
     <main className={`app-shell ${appDarkMode ? 'is-dark' : ''}`}>
+      {openMenu && (
+        <button
+          className="mobile-menu-backdrop"
+          type="button"
+          aria-label="关闭菜单"
+          onClick={() => setOpenMenu('')}
+        />
+      )}
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">
@@ -647,26 +698,24 @@ function App() {
           <RibbonMenu
             id="open"
             icon={<FolderOpen size={18} />}
-            label="打开"
+            label="导入"
             active={openMenu === 'open'}
             onToggle={toggleMenu}
           >
             <MenuItem
-              icon={<FileText size={16} />}
-              label="打开 Markdown"
+              label="导入 Markdown"
               hint=".md"
               onClick={() => fileInput.current?.click()}
             />
             <MenuItem
-              icon={<FolderOpen size={16} />}
+              label="导入 HTML"
+              hint=".html"
+              onClick={() => projectHtmlInput.current?.click()}
+            />
+            <MenuItem
               label="导入 Deckdown 项目"
               hint=".zip"
               onClick={() => zipInput.current?.click()}
-            />
-            <MenuItem
-              icon={<FolderCog size={16} />}
-              label={projectFolder ? `文件夹：${projectFolder.name}` : '打开项目文件夹'}
-              onClick={() => void selectProjectFolder()}
             />
           </RibbonMenu>
           <input
@@ -675,6 +724,16 @@ function App() {
             type="file"
             accept=".md,.markdown,text/markdown,text/plain"
             onChange={(event) => importMarkdown(event.target.files?.[0])}
+          />
+          <input
+            ref={projectHtmlInput}
+            hidden
+            type="file"
+            accept=".html,.htm,text/html"
+            onChange={(event) => {
+              void importHtmlProject(event.target.files?.[0])
+              event.target.value = ''
+            }}
           />
           <input
             ref={zipInput}
@@ -694,20 +753,9 @@ function App() {
             onToggle={toggleMenu}
           >
             <MenuItem
-              icon={<Wand2 size={16} />}
               label="快速整理标题"
               hint="H1 / H2 / H3"
               onClick={formatDocument}
-            />
-            <MenuItem
-              icon={<List size={16} />}
-              label={settings.includeToc ? '关闭自动目录' : '添加自动目录'}
-              hint="标题页之后"
-              onClick={() => {
-                const includeToc = !settings.includeToc
-                updateSettings({ includeToc })
-                setMarkdown((current) => syncManagedToc(current, includeToc))
-              }}
             />
           </RibbonMenu>
 
@@ -719,21 +767,26 @@ function App() {
             onToggle={toggleMenu}
           >
             <MenuItem
-              icon={<ImagePlus size={16} />}
               label="插入图片"
               onClick={() => imageInput.current?.click()}
             />
             <MenuItem
-              icon={<ExternalLink size={16} />}
               label="插入 HTML 文件"
               hint="嵌入演示"
               onClick={() => htmlInput.current?.click()}
             />
             <MenuItem
-              icon={<ExternalLink size={16} />}
               label="插入网页地址"
               hint="https://"
               onClick={insertWebPage}
+            />
+            <MenuItem
+              label="插入自动目录"
+              hint="标题页之后"
+              onClick={() => {
+                updateSettings({ includeToc: true })
+                setMarkdown((current) => syncManagedToc(current, true))
+              }}
             />
           </RibbonMenu>
           <input
@@ -781,19 +834,17 @@ function App() {
             </div>
             <div className="menu-separator" />
             <MenuItem
-              icon={<Type size={16} />}
               label="字体设置"
               hint="标题 / 正文"
               onClick={() => setFontDialogOpen(true)}
             />
             <MenuItem
-              icon={<Braces size={16} />}
               label="组件 CSS"
               hint="列表 / 代码 / 引用…"
               onClick={() => setStyleDialogOpen(true)}
             />
             <div className="submenu-row">
-              <span><Layout size={16} /> 幻灯片大小</span>
+              <span>幻灯片大小</span>
               <div className="segmented">
                 {(['16:9', '4:3'] as const).map((ratio) => (
                   <button
@@ -807,7 +858,7 @@ function App() {
               </div>
             </div>
             <div className="submenu-row">
-              <span><Play size={16} /> 逐项出现动画</span>
+              <span>列表逐项出现动画</span>
               <button
                 className={`toggle-switch ${settings.progressiveReveal ? 'is-active' : ''}`}
                 role="switch"
@@ -822,7 +873,22 @@ function App() {
               </button>
             </div>
             <div className="submenu-row">
-              <span><EyeOff size={16} /> 隐藏进度条和方向箭头</span>
+              <span>图片阴影</span>
+              <button
+                className={`toggle-switch ${settings.imageShadow ? 'is-active' : ''}`}
+                role="switch"
+                aria-checked={settings.imageShadow}
+                onClick={() =>
+                  updateSettings({
+                    imageShadow: !settings.imageShadow,
+                  })
+                }
+              >
+                <span />
+              </button>
+            </div>
+            <div className="submenu-row">
+              <span>隐藏进度条和方向箭头</span>
               <button
                 className={`toggle-switch ${settings.hideNavigationControls ? 'is-active' : ''}`}
                 role="switch"
@@ -838,7 +904,7 @@ function App() {
               </button>
             </div>
             <div className="submenu-row">
-              <span><Edit3 size={16} /> 自由绘图</span>
+              <span>自由绘图</span>
               <button
                 className={`toggle-switch ${settings.enableDrawing ? 'is-active' : ''}`}
                 role="switch"
@@ -860,25 +926,22 @@ function App() {
           </button>
           <RibbonMenu
             id="export"
-            icon={<Download size={18} />}
+            icon={<SquareArrowOutUpRight size={18} />}
             label="导出"
             active={openMenu === 'export'}
             onToggle={toggleMenu}
           >
             <MenuItem
-              icon={<Download size={16} />}
               label="导出独立 HTML"
               hint="离线播放"
               onClick={downloadHtml}
             />
             <MenuItem
-              icon={<Download size={16} />}
               label={exporting === 'pdf' ? '正在生成 PDF…' : '导出 PDF'}
               hint="高清图片"
               onClick={() => void downloadPdf()}
             />
             <MenuItem
-              icon={<FolderOpen size={16} />}
               label={exporting === 'zip' ? '正在打包项目…' : '导出项目 ZIP'}
               hint="跨设备继续编辑"
               onClick={() => void downloadProjectZip()}
@@ -911,7 +974,9 @@ function App() {
       </header>
 
       <section className="workspace">
-        <div className="pane editor-pane">
+        <div
+          className={`pane editor-pane ${mobileEditorOpen ? 'is-mobile-expanded' : ''}`}
+        >
           <div className="pane-header">
             <div>
               <FileText size={16} />
@@ -920,6 +985,19 @@ function App() {
             <span className="status">
               可编辑 · 自动保存 · {markdown.length.toLocaleString()} 字符
             </span>
+            <button
+              className="mobile-editor-toggle"
+              type="button"
+              onClick={() => setMobileEditorOpen((current) => !current)}
+              aria-expanded={mobileEditorOpen}
+            >
+              {mobileEditorOpen ? (
+                <PanelBottomClose size={16} />
+              ) : (
+                <PanelBottomOpen size={16} />
+              )}
+              <span>{mobileEditorOpen ? '收起编辑' : '展开编辑'}</span>
+            </button>
           </div>
           <MarkdownEditor
             ref={editorRef}
@@ -957,6 +1035,15 @@ function App() {
                 )
               }}
             />
+            <button
+              className="mobile-landscape-button"
+              type="button"
+              onClick={openMobilePresentation}
+              title="在独立页面横屏播放"
+            >
+              <RectangleHorizontal size={19} />
+              <span>横屏播放</span>
+            </button>
           </div>
           <div className="preview-tip">
             <span>← → 切换章节 · ↑ ↓ 切换章节内容 · F 全屏 · O 总览</span>
