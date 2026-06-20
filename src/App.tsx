@@ -21,8 +21,12 @@ import {
 import { buildPresentationHtml } from './lib/exportHtml'
 import {
   compileMarkdown,
+  formatYamlDate,
   formatMarkdownStructure,
+  readBooleanSettingsFrontmatter,
+  readDocumentDates,
   slideIndexAtOffset,
+  syncBooleanSettingsFrontmatter,
   syncManagedToc,
 } from './lib/markdown'
 import {
@@ -40,6 +44,19 @@ import {
 } from './lib/themes'
 import type { ComponentStyles, PresentationSettings } from './lib/types'
 import './App.css'
+
+type InsertDialogState =
+  | {
+      type: 'web'
+      url: string
+      label: string
+    }
+  | {
+      type: 'video'
+      url: string
+      title: string
+      width: string
+    }
 
 const STORAGE_KEY = 'ready-slides:document'
 const THEME_KEY = 'ready-slides:theme'
@@ -101,9 +118,10 @@ const componentStyleLabels: Record<keyof ComponentStyles, string> = {
 }
 const defaultSettings: PresentationSettings = {
   includeToc: true,
+  verticalSubpages: true,
   progressiveReveal: true,
   imageShadow: true,
-  hideNavigationControls: false,
+  navigationControls: true,
   enableDrawing: false,
   ratio: '16:9',
   headingFont: fontChoices[1].value,
@@ -112,6 +130,75 @@ const defaultSettings: PresentationSettings = {
   bodyScale: 1,
   componentStyles: emptyComponentStyles,
   themeCss: defaultThemeCss,
+}
+
+function settingsFromMarkdown(
+  source: string,
+  base: PresentationSettings,
+): PresentationSettings {
+  return {
+    ...base,
+    ...readBooleanSettingsFrontmatter(source),
+  }
+}
+
+function syncMarkdownSettings(
+  source: string,
+  settings: PresentationSettings,
+  dates = readDocumentDates(source),
+) {
+  return syncBooleanSettingsFrontmatter(
+    syncManagedToc(source, settings.includeToc),
+    settings,
+    dates,
+  )
+}
+
+function migrateSavedSettings(saved: Partial<PresentationSettings> & {
+  chapterNavigation?: boolean
+  hideNavigationControls?: boolean
+}) {
+  const {
+    chapterNavigation,
+    hideNavigationControls,
+    ...currentSettings
+  } = saved
+  return {
+    ...currentSettings,
+    verticalSubpages:
+      saved.verticalSubpages ?? chapterNavigation ?? true,
+    navigationControls:
+      saved.navigationControls ?? !(hideNavigationControls ?? false),
+  }
+}
+
+function loadInitialState() {
+  const source = localStorage.getItem(STORAGE_KEY) || defaultMarkdown
+  try {
+    const saved = migrateSavedSettings(
+      JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'),
+    )
+    const settings = settingsFromMarkdown(source, {
+      ...defaultSettings,
+      ...saved,
+      componentStyles: {
+        ...emptyComponentStyles,
+        ...(saved.componentStyles || {}),
+      },
+      themeCss: {
+        ...loadThemeCss(saved.themeCss),
+      },
+    })
+    return {
+      settings,
+      markdown: syncMarkdownSettings(source, settings),
+    }
+  } catch {
+    return {
+      settings: defaultSettings,
+      markdown: syncMarkdownSettings(source, defaultSettings),
+    }
+  }
 }
 
 function loadThemeCss(saved?: Record<string, string>) {
@@ -179,6 +266,112 @@ function MenuItem({
   )
 }
 
+function InsertDialog({
+  value,
+  error,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  value: InsertDialogState
+  error: string
+  onChange: (value: InsertDialogState) => void
+  onClose: () => void
+  onSubmit: () => void
+}) {
+  const isVideo = value.type === 'video'
+  return (
+    <div className="dialog-backdrop" onMouseDown={onClose}>
+      <form
+        className="form-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={isVideo ? '插入在线视频' : '插入网页链接'}
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={(event) => {
+          event.preventDefault()
+          onSubmit()
+        }}
+      >
+        <div className="dialog-header">
+          <div>
+            <strong>{isVideo ? '插入在线视频' : '插入网页链接'}</strong>
+            <span>
+              {isVideo
+                ? '支持 YouTube、Bilibili 和标准 iframe 嵌入地址。'
+                : '链接将插入到当前光标位置。'}
+            </span>
+          </div>
+          <button type="button" onClick={onClose} aria-label="关闭">
+            ×
+          </button>
+        </div>
+        <div className="dialog-fields">
+          <label>
+            <span>{isVideo ? '视频地址' : '网页地址'}</span>
+            <input
+              autoFocus
+              type="url"
+              inputMode="url"
+              value={value.url}
+              placeholder="https://"
+              onFocus={(event) => event.currentTarget.select()}
+              onChange={(event) =>
+                onChange({ ...value, url: event.target.value })
+              }
+            />
+          </label>
+          {value.type === 'web' ? (
+            <label>
+              <span>链接名称</span>
+              <input
+                value={value.label}
+                placeholder="打开网页"
+                onChange={(event) =>
+                  onChange({ ...value, label: event.target.value })
+                }
+              />
+            </label>
+          ) : (
+            <>
+              <label>
+                <span>视频标题</span>
+                <input
+                  value={value.title}
+                  placeholder="嵌入视频"
+                  onChange={(event) =>
+                    onChange({ ...value, title: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>显示宽度</span>
+                <input
+                  value={value.width}
+                  placeholder="例如 800、80%（可留空）"
+                  onChange={(event) =>
+                    onChange({ ...value, width: event.target.value })
+                  }
+                />
+                <small>纯数字按像素处理，也支持百分比和 CSS 长度。</small>
+              </label>
+            </>
+          )}
+          {error && <div className="dialog-error">{error}</div>}
+        </div>
+        <div className="dialog-actions">
+          <button type="button" onClick={onClose}>
+            取消
+          </button>
+          <button className="primary" type="submit">
+            插入
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 function GitHubMark() {
   return (
     <svg
@@ -194,41 +387,20 @@ function GitHubMark() {
 }
 
 function App() {
-  const [markdown, setMarkdown] = useState(
-    () => {
-      const source = localStorage.getItem(STORAGE_KEY) || defaultMarkdown
-      try {
-        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')
-        return syncManagedToc(source, saved.includeToc ?? true)
-      } catch {
-        return syncManagedToc(source, true)
-      }
-    },
-  )
+  const initialState = useMemo(() => loadInitialState(), [])
+  const [markdown, setMarkdown] = useState(initialState.markdown)
   const [theme, setTheme] = useState<ThemeName>(
     () => (localStorage.getItem(THEME_KEY) as ThemeName) || 'paper',
   )
-  const [settings, setSettings] = useState<PresentationSettings>(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')
-      return {
-        ...defaultSettings,
-        ...saved,
-        componentStyles: {
-          ...emptyComponentStyles,
-          ...(saved.componentStyles || {}),
-        },
-        themeCss: {
-          ...loadThemeCss(saved.themeCss),
-        },
-      }
-    } catch {
-      return defaultSettings
-    }
-  })
+  const [settings, setSettings] =
+    useState<PresentationSettings>(initialState.settings)
   const [openMenu, setOpenMenu] = useState('')
   const [fontDialogOpen, setFontDialogOpen] = useState(false)
   const [styleDialogOpen, setStyleDialogOpen] = useState(false)
+  const [insertDialog, setInsertDialog] =
+    useState<InsertDialogState | null>(null)
+  const [insertDialogError, setInsertDialogError] = useState('')
+  const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const [appDarkMode, setAppDarkMode] = useState(
     () => localStorage.getItem(APP_MODE_KEY) === 'dark',
   )
@@ -241,6 +413,7 @@ function App() {
   const htmlInput = useRef<HTMLInputElement>(null)
   const previewRef = useRef<HTMLIFrameElement>(null)
   const activeSlideIndexRef = useRef(0)
+  const pendingModifiedRef = useRef(false)
   const editorRef = useRef<MarkdownEditorHandle>(null)
   const [notice, setNotice] = useState('')
   const [cursorOffset, setCursorOffset] = useState(0)
@@ -354,11 +527,18 @@ function App() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const synced = syncManagedToc(markdown, settings.includeToc)
+      const dates = readDocumentDates(markdown)
+      const synced = syncMarkdownSettings(markdown, settings, {
+        created: dates.created,
+        modified: pendingModifiedRef.current
+          ? formatYamlDate()
+          : dates.modified,
+      })
+      pendingModifiedRef.current = false
       if (synced !== markdown) setMarkdown(synced)
     }, 450)
     return () => window.clearTimeout(timer)
-  }, [markdown, settings.includeToc])
+  }, [markdown, settings])
 
   useEffect(() => {
     localStorage.setItem(APP_MODE_KEY, appDarkMode ? 'dark' : 'light')
@@ -521,7 +701,16 @@ function App() {
 
   const importMarkdown = async (file?: File) => {
     if (!file) return
-    setMarkdown(syncManagedToc(await file.text(), settings.includeToc))
+    const source = await file.text()
+    const importedSettings = settingsFromMarkdown(source, settings)
+    const importedAt = formatYamlDate()
+    setSettings(importedSettings)
+    setMarkdown(
+      syncMarkdownSettings(source, importedSettings, {
+        created: importedAt,
+        modified: importedAt,
+      }),
+    )
   }
 
   const restoreImportedProject = (imported: {
@@ -530,10 +719,10 @@ function App() {
     settings?: PresentationSettings
     assetCount: number
   }) => {
-    const importedSettings = imported.settings
+    const baseImportedSettings = imported.settings
       ? {
           ...defaultSettings,
-          ...imported.settings,
+          ...migrateSavedSettings(imported.settings),
           componentStyles: {
             ...emptyComponentStyles,
             ...(imported.settings.componentStyles || {}),
@@ -541,12 +730,20 @@ function App() {
           themeCss: loadThemeCss(imported.settings.themeCss),
         }
       : settings
+    const importedSettings = settingsFromMarkdown(
+      imported.markdown,
+      baseImportedSettings,
+    )
     setSettings(importedSettings)
     if (imported.theme && imported.theme in themeLabels) {
       setTheme(imported.theme)
     }
+    const importedAt = formatYamlDate()
     setMarkdown(
-      syncManagedToc(imported.markdown, importedSettings.includeToc),
+      syncMarkdownSettings(imported.markdown, importedSettings, {
+        created: importedAt,
+        modified: importedAt,
+      }),
     )
   }
 
@@ -606,16 +803,22 @@ function App() {
   }
 
   const resetDocument = () => {
-    if (window.confirm('恢复示例内容？当前编辑内容会被替换。')) {
-      setMarkdown(syncManagedToc(defaultMarkdown, settings.includeToc))
-    }
+    const createdAt = formatYamlDate()
+    setMarkdown(
+      syncMarkdownSettings(defaultMarkdown, settings, {
+        created: createdAt,
+        modified: createdAt,
+      }),
+    )
+    setResetDialogOpen(false)
   }
 
   const formatDocument = () => {
+    pendingModifiedRef.current = true
     setMarkdown((value) =>
-      syncManagedToc(
+      syncMarkdownSettings(
         formatMarkdownStructure(value),
-        settings.includeToc,
+        settings,
       ),
     )
     setNotice('已整理标题层级：H1 标题页、H2 章节页、H3 内容页。')
@@ -623,13 +826,84 @@ function App() {
   }
 
   const insertWebPage = () => {
-    const url = window.prompt(
-      '输入网页地址：',
-      'https://',
+    setInsertDialogError('')
+    setInsertDialog({
+      type: 'web',
+      url: 'https://',
+      label: '打开网页',
+    })
+  }
+
+  const insertVideo = () => {
+    setInsertDialogError('')
+    setInsertDialog({
+      type: 'video',
+      url: 'https://',
+      title: '嵌入视频',
+      width: '',
+    })
+  }
+
+  const submitInsertDialog = () => {
+    if (!insertDialog) return
+    let url: URL
+    try {
+      url = new URL(insertDialog.url)
+    } catch {
+      setInsertDialogError('地址格式不正确，请输入完整的 http:// 或 https:// 地址。')
+      return
+    }
+    if (!/^https?:$/.test(url.protocol)) {
+      setInsertDialogError('目前仅支持 http:// 和 https:// 地址。')
+      return
+    }
+
+    if (insertDialog.type === 'web') {
+      const label = insertDialog.label.trim() || '打开网页'
+      editorRef.current?.insertText(`\n\n[${label}](${url.toString()})\n\n`)
+      setInsertDialog(null)
+      return
+    }
+
+    let embedUrl = url.toString()
+    const hostname = url.hostname.replace(/^www\./, '')
+    if (hostname === 'youtu.be') {
+      const videoId = url.pathname.split('/').filter(Boolean)[0]
+      if (videoId) embedUrl = `https://www.youtube.com/embed/${videoId}`
+    } else if (hostname.endsWith('youtube.com')) {
+      const videoId =
+        url.searchParams.get('v') ||
+        url.pathname.match(/^\/(?:shorts|embed)\/([^/?]+)/)?.[1]
+      if (videoId) embedUrl = `https://www.youtube.com/embed/${videoId}`
+    } else if (hostname.endsWith('bilibili.com')) {
+      const videoId = url.pathname.match(/\/video\/(BV[\w]+|av\d+)/i)?.[1]
+      if (videoId?.toLowerCase().startsWith('av')) {
+        embedUrl = `https://player.bilibili.com/player.html?aid=${videoId.slice(2)}`
+      } else if (videoId) {
+        embedUrl = `https://player.bilibili.com/player.html?bvid=${videoId}`
+      }
+      const page = url.searchParams.get('p')
+      if (page && embedUrl.includes('player.bilibili.com')) {
+        embedUrl += `&page=${encodeURIComponent(page)}`
+      }
+    }
+
+    const width = insertDialog.width.trim()
+    if (
+      width &&
+      !/^(?:\d+(?:\.\d+)?(?:px|%|rem|em|vw)?|auto)$/i.test(width)
+    ) {
+      setInsertDialogError('宽度请填写数字、百分比或 px / rem / em / vw。')
+      return
+    }
+    const title = insertDialog.title.trim() || '嵌入视频'
+    const widthAttribute = width
+      ? ` width="${width.replace(/"/g, '&quot;')}"`
+      : ''
+    editorRef.current?.insertText(
+      `\n\n<iframe src="${embedUrl}" title="${title.replace(/"/g, '&quot;')}"${widthAttribute} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>\n\n`,
     )
-    if (!url) return
-    const label = window.prompt('链接名称：', '打开网页') || '打开网页'
-    editorRef.current?.insertText(`\n\n[${label}](${url})\n\n`)
+    setInsertDialog(null)
   }
 
   const chooseHtmlFiles = async (files?: FileList | null) => {
@@ -646,13 +920,28 @@ function App() {
     window.setTimeout(() => setNotice(''), 2600)
   }
 
-  const updateSettings = (patch: Partial<PresentationSettings>) =>
+  const updateSettings = (patch: Partial<PresentationSettings>) => {
+    pendingModifiedRef.current = true
     setSettings((current) => ({ ...current, ...patch }))
+  }
+
+  const updateMarkdown = (value: string) => {
+    const frontmatterSettings = readBooleanSettingsFrontmatter(value)
+    pendingModifiedRef.current = true
+    if (Object.keys(frontmatterSettings).length) {
+      setSettings((current) => ({
+        ...current,
+        ...frontmatterSettings,
+      }))
+    }
+    setMarkdown(value)
+  }
 
   const updateComponentStyle = (
     component: keyof ComponentStyles,
     value: string,
-  ) =>
+  ) => {
+    pendingModifiedRef.current = true
     setSettings((current) => ({
       ...current,
       componentStyles: {
@@ -660,8 +949,10 @@ function App() {
         [component]: value,
       },
     }))
+  }
 
-  const updateThemeCss = (value: string) =>
+  const updateThemeCss = (value: string) => {
+    pendingModifiedRef.current = true
     setSettings((current) => ({
       ...current,
       themeCss: {
@@ -669,6 +960,7 @@ function App() {
         [theme]: value,
       },
     }))
+  }
 
   return (
     <main className={`app-shell ${appDarkMode ? 'is-dark' : ''}`}>
@@ -781,12 +1073,9 @@ function App() {
               onClick={insertWebPage}
             />
             <MenuItem
-              label="插入自动目录"
-              hint="标题页之后"
-              onClick={() => {
-                updateSettings({ includeToc: true })
-                setMarkdown((current) => syncManagedToc(current, true))
-              }}
+              label="插入视频"
+              hint="YouTube / Bilibili"
+              onClick={insertVideo}
             />
           </RibbonMenu>
           <input
@@ -825,7 +1114,18 @@ function App() {
                 <button
                   key={name}
                   className={`theme-swatch theme-${name} ${theme === name ? 'is-active' : ''}`}
-                  onClick={() => setTheme(name)}
+                  onClick={() => {
+                    pendingModifiedRef.current = true
+                    setTheme(name)
+                    const dates = readDocumentDates(markdown)
+                    setMarkdown(
+                      syncMarkdownSettings(markdown, settings, {
+                        created: dates.created,
+                        modified: formatYamlDate(),
+                      }),
+                    )
+                    pendingModifiedRef.current = false
+                  }}
                 >
                   <span />
                   {themeLabels[name]}
@@ -858,6 +1158,36 @@ function App() {
               </div>
             </div>
             <div className="submenu-row">
+              <span>纵向子页面</span>
+              <button
+                className={`toggle-switch ${settings.verticalSubpages ? 'is-active' : ''}`}
+                role="switch"
+                aria-checked={settings.verticalSubpages}
+                onClick={() =>
+                  updateSettings({
+                    verticalSubpages: !settings.verticalSubpages,
+                  })
+                }
+              >
+                <span />
+              </button>
+            </div>
+            <div className="submenu-row">
+              <span>自动目录</span>
+              <button
+                className={`toggle-switch ${settings.includeToc ? 'is-active' : ''}`}
+                role="switch"
+                aria-checked={settings.includeToc}
+                onClick={() =>
+                  updateSettings({
+                    includeToc: !settings.includeToc,
+                  })
+                }
+              >
+                <span />
+              </button>
+            </div>
+            <div className="submenu-row">
               <span>列表逐项出现动画</span>
               <button
                 className={`toggle-switch ${settings.progressiveReveal ? 'is-active' : ''}`}
@@ -888,15 +1218,14 @@ function App() {
               </button>
             </div>
             <div className="submenu-row">
-              <span>隐藏进度条和方向箭头</span>
+              <span>导航控件</span>
               <button
-                className={`toggle-switch ${settings.hideNavigationControls ? 'is-active' : ''}`}
+                className={`toggle-switch ${settings.navigationControls ? 'is-active' : ''}`}
                 role="switch"
-                aria-checked={settings.hideNavigationControls}
+                aria-checked={settings.navigationControls}
                 onClick={() =>
                   updateSettings({
-                    hideNavigationControls:
-                      !settings.hideNavigationControls,
+                    navigationControls: !settings.navigationControls,
                   })
                 }
               >
@@ -947,7 +1276,11 @@ function App() {
               onClick={() => void downloadProjectZip()}
             />
           </RibbonMenu>
-          <button className="ribbon-button" onClick={resetDocument} title="恢复示例">
+          <button
+            className="ribbon-button"
+            onClick={() => setResetDialogOpen(true)}
+            title="恢复示例"
+          >
             <RotateCcw size={16} />
             <span>恢复</span>
           </button>
@@ -1002,7 +1335,7 @@ function App() {
           <MarkdownEditor
             ref={editorRef}
             value={markdown}
-            onChange={setMarkdown}
+            onChange={updateMarkdown}
             onImageFiles={insertImageFiles}
             onCursorChange={setCursorOffset}
           />
@@ -1024,7 +1357,7 @@ function App() {
               ref={previewRef}
               title="幻灯片预览"
               srcDoc={previewHtml}
-              sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-modals"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-modals allow-presentation"
               onLoad={() => {
                 previewRef.current?.contentWindow?.postMessage(
                   {
@@ -1046,10 +1379,66 @@ function App() {
             </button>
           </div>
           <div className="preview-tip">
-            <span>← → 切换章节 · ↑ ↓ 切换章节内容 · F 全屏 · O 总览</span>
+            <span>
+              {settings.verticalSubpages
+                ? '← → 切换章节 · ↑ ↓ 切换章节内容'
+                : '方向键线性切换幻灯片'}{' '}
+              · F 全屏 · O 总览
+            </span>
           </div>
         </div>
       </section>
+      {insertDialog && (
+        <InsertDialog
+          value={insertDialog}
+          error={insertDialogError}
+          onChange={(value) => {
+            setInsertDialog(value)
+            setInsertDialogError('')
+          }}
+          onClose={() => {
+            setInsertDialog(null)
+            setInsertDialogError('')
+          }}
+          onSubmit={submitInsertDialog}
+        />
+      )}
+      {resetDialogOpen && (
+        <div
+          className="dialog-backdrop"
+          onMouseDown={() => setResetDialogOpen(false)}
+        >
+          <section
+            className="form-dialog confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="恢复示例内容"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="dialog-header">
+              <div>
+                <strong>恢复示例内容</strong>
+                <span>当前编辑内容将被示例文稿替换，此操作无法撤销。</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResetDialogOpen(false)}
+                aria-label="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <div className="dialog-actions">
+              <button type="button" onClick={() => setResetDialogOpen(false)}>
+                取消
+              </button>
+              <button className="primary danger" type="button" onClick={resetDocument}>
+                恢复示例
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {fontDialogOpen && (
         <div className="dialog-backdrop" onMouseDown={() => setFontDialogOpen(false)}>
           <section className="font-dialog" onMouseDown={(event) => event.stopPropagation()}>

@@ -293,6 +293,75 @@
   box-shadow: 0 25px 80px rgba(0,0,0,.28);
 }
 
+.form-dialog {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 20px;
+  border: 1px solid rgba(102, 94, 78, .12);
+  border-radius: 14px;
+  padding: 22px;
+  color: #34342f;
+  background: #fff;
+  box-shadow: 0 25px 80px rgba(0,0,0,.28);
+}
+
+.dialog-fields {
+  display: grid;
+  gap: 15px;
+}
+
+.dialog-fields label {
+  display: grid;
+  gap: 7px;
+  color: #55534c;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dialog-fields input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid #d8d4c9;
+  border-radius: 8px;
+  outline: 0;
+  padding: 0 12px;
+  color: #34342f;
+  background: #fff;
+  font: 13px/1.4 system-ui, sans-serif;
+  transition:
+    border-color .16s ease,
+    box-shadow .16s ease;
+}
+
+.dialog-fields input:focus {
+  border-color: #b7472a;
+  box-shadow: 0 0 0 3px rgba(183, 71, 42, .13);
+}
+
+.dialog-fields small {
+  color: #918d83;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.dialog-error {
+  border: 1px solid #e9c2b5;
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: #a43d25;
+  background: #fff3ef;
+  font-size: 11px;
+}
+
+.confirm-dialog {
+  width: min(440px, 100%);
+}
+
+.dialog-actions button.danger {
+  border-color: #a83e2a;
+  background: #a83e2a;
+}
+
 .dialog-header {
   display: flex;
   align-items: flex-start;
@@ -591,10 +660,38 @@
 }
 .app-shell.is-dark .ribbon-dropdown,
 .app-shell.is-dark .font-dialog,
+.app-shell.is-dark .form-dialog,
 .app-shell.is-dark .style-dialog {
   color: #e7e4dd;
   border-color: #4a4b45;
   background: #292a26;
+}
+.app-shell.is-dark .dialog-fields label { color: #d7d4cd; }
+.app-shell.is-dark .dialog-fields input {
+  color: #eeeae1;
+  border-color: #51524c;
+  background: #20211e;
+}
+.app-shell.is-dark .dialog-fields input:focus {
+  border-color: #d36b4c;
+  box-shadow: 0 0 0 3px rgba(211, 107, 76, .17);
+}
+.app-shell.is-dark .dialog-fields small,
+.app-shell.is-dark .dialog-header span { color: #999a93; }
+.app-shell.is-dark .dialog-error {
+  color: #ffb29b;
+  border-color: #704236;
+  background: #432c26;
+}
+.app-shell.is-dark .dialog-actions button {
+  color: #dedbd4;
+  border-color: #51524c;
+  background: #353630;
+}
+.app-shell.is-dark .dialog-actions button.primary {
+  color: #fff;
+  border-color: #b7472a;
+  background: #b7472a;
 }
 .app-shell.is-dark .menu-item,
 .app-shell.is-dark .submenu-row { color: #e0ddd6; }

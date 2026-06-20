@@ -1,6 +1,11 @@
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import type { Presentation, Slide, SlideKind } from './types'
+import type {
+  Presentation,
+  PresentationSettings,
+  Slide,
+  SlideKind,
+} from './types'
 
 marked.setOptions({ gfm: true, breaks: false })
 
@@ -20,6 +25,117 @@ interface MarkdownSection extends SourceChunk {
 const headingPattern = /^(#{1,3})\s+(.+?)\s*$/
 const TOC_START = '<!-- deckdown-toc:start -->'
 const TOC_END = '<!-- deckdown-toc:end -->'
+export const booleanSettingKeys = [
+  'includeToc',
+  'verticalSubpages',
+  'progressiveReveal',
+  'imageShadow',
+  'navigationControls',
+  'enableDrawing',
+] as const satisfies ReadonlyArray<keyof PresentationSettings>
+
+export type BooleanSettingKey = (typeof booleanSettingKeys)[number]
+export interface DocumentDates {
+  created: string
+  modified: string
+}
+
+const legacyBooleanSettingKeys = [
+  'chapterNavigation',
+  'hideNavigationControls',
+] as const
+
+export function formatYamlDate(date = new Date()) {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const offsetMinutes = -date.getTimezoneOffset()
+  const sign = offsetMinutes >= 0 ? '+' : '-'
+  const absoluteOffset = Math.abs(offsetMinutes)
+  return [
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
+    `${sign}${pad(Math.floor(absoluteOffset / 60))}:${pad(absoluteOffset % 60)}`,
+  ].join('')
+}
+
+export function readDocumentDates(source: string): Partial<DocumentDates> {
+  const normalized = source.replace(/\r\n/g, '\n')
+  const frontmatter = normalized.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)
+  if (!frontmatter) return {}
+  const read = (key: string) =>
+    frontmatter[1].match(new RegExp(`^${key}:\\s*(\\S+)\\s*$`, 'mi'))?.[1]
+  return {
+    created: read('date created'),
+    modified: read('date modified'),
+  }
+}
+
+export function readBooleanSettingsFrontmatter(source: string) {
+  const normalized = source.replace(/\r\n/g, '\n')
+  const frontmatter = normalized.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)
+  const result: Partial<Record<BooleanSettingKey, boolean>> = {}
+  if (!frontmatter) return result
+
+  booleanSettingKeys.forEach((key) => {
+    const match = frontmatter[1].match(
+      new RegExp(`^${key}:\\s*(true|false)\\s*(?:#.*)?$`, 'mi'),
+    )
+    if (match) result[key] = match[1].toLowerCase() === 'true'
+  })
+  if (result.verticalSubpages === undefined) {
+    const legacy = frontmatter[1].match(
+      /^chapterNavigation:\s*(true|false)\s*(?:#.*)?$/mi,
+    )
+    if (legacy) result.verticalSubpages = legacy[1].toLowerCase() === 'true'
+  }
+  if (result.navigationControls === undefined) {
+    const legacy = frontmatter[1].match(
+      /^hideNavigationControls:\s*(true|false)\s*(?:#.*)?$/mi,
+    )
+    if (legacy) result.navigationControls = legacy[1].toLowerCase() !== 'true'
+  }
+  return result
+}
+
+export function syncBooleanSettingsFrontmatter(
+  source: string,
+  settings: Pick<PresentationSettings, BooleanSettingKey>,
+  dates?: Partial<DocumentDates>,
+) {
+  const normalized = source.replace(/\r\n/g, '\n')
+  const frontmatter = normalized.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)
+  const existingDates = readDocumentDates(normalized)
+  const now = formatYamlDate()
+  const documentDates: DocumentDates = {
+    created: dates?.created || existingDates.created || now,
+    modified: dates?.modified || existingDates.modified || now,
+  }
+  const values = Object.fromEntries(
+    booleanSettingKeys.map((key) => [key, settings[key]]),
+  ) as Record<BooleanSettingKey, boolean>
+  const managedLines = [
+    `date created: ${documentDates.created}`,
+    `date modified: ${documentDates.modified}`,
+    ...booleanSettingKeys.map((key) => `${key}: ${values[key]}`),
+  ]
+
+  if (!frontmatter) {
+    return `---\n${managedLines.join('\n')}\n---\n\n${normalized}`
+  }
+
+  const managedKeys = [
+    'date created',
+    'date modified',
+    ...booleanSettingKeys,
+    ...legacyBooleanSettingKeys,
+  ]
+  const preservedLines = frontmatter[1].split('\n').filter(
+    (line) =>
+      !managedKeys.some((key) => new RegExp(`^${key}:\\s*`, 'i').test(line)),
+  )
+  const lines = [...managedLines, ...preservedLines]
+
+  return `---\n${lines.join('\n')}\n---\n${normalized.slice(frontmatter[0].length)}`
+}
 
 function escapeText(value: string) {
   return value.replace(/[*_`~[\]]/g, '')
@@ -188,7 +304,21 @@ function renderMarkdown(source: string) {
     item.setAttribute('data-list-marker', markers[index] || '-')
   })
   return DOMPurify.sanitize(template.innerHTML, {
-    ADD_ATTR: ['target', 'rel', 'data-list-marker', 'data-column-count'],
+    ADD_TAGS: ['iframe'],
+    ADD_ATTR: [
+      'target',
+      'rel',
+      'data-list-marker',
+      'data-column-count',
+      'allow',
+      'allowfullscreen',
+      'frameborder',
+      'loading',
+      'referrerpolicy',
+      'title',
+      'width',
+      'height',
+    ],
     ALLOWED_URI_REGEXP:
       /^(?:(?:https?|mailto|tel|file|data|blob):|[^:]+$)/i,
   })

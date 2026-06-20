@@ -39,9 +39,10 @@ export interface ComponentStyles {
 
 export interface PresentationSettings {
   includeToc: boolean
+  verticalSubpages: boolean
   progressiveReveal: boolean
   imageShadow: boolean
-  hideNavigationControls: boolean
+  navigationControls: boolean
   enableDrawing: boolean
   ratio: SlideRatio
   headingFont: string

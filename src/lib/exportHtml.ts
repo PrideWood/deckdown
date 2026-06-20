@@ -94,8 +94,9 @@ const presentationCss = `
     align-items: center;
     justify-content: center;
   }
-  .slide-body.is-centered .image-column {
+  .slide-body.is-centered .media-column {
     width: 100%;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -107,17 +108,17 @@ const presentationCss = `
     gap: 48px;
   }
   .slide-body.is-split .text-column,
-  .slide-body.is-split .image-column {
+  .slide-body.is-split .media-column {
     min-width: 0;
   }
-  .slide-body.is-split .image-column {
+  .slide-body.is-split .media-column {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 16px;
   }
-  .slide-body.is-split .image-column p {
+  .slide-body.is-split .media-column p {
     margin: 0;
     text-align: center;
   }
@@ -345,6 +346,24 @@ const presentationCss = `
   .reveal.has-image-shadow img {
     box-shadow: 0 22px 52px -14px rgba(0,0,0,.24);
   }
+  .reveal .media-column iframe,
+  .reveal .deckdown-column iframe {
+    display: block;
+    max-width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: 540px;
+    border: 0;
+    border-radius: 16px;
+    background: #000;
+    box-shadow: 0 18px 48px rgba(0,0,0,.24);
+  }
+  .reveal .media-column iframe:not([width]),
+  .reveal .deckdown-column iframe:not([width]) {
+    width: min(100%, 960px);
+  }
+  .reveal .slide-body.is-split .media-column iframe:not([width]) {
+    width: 100%;
+  }
   .reveal table { font-size: .72em; }
   .reveal table th {
     background: var(--accent);
@@ -435,6 +454,10 @@ const presentationCss = `
     color: var(--accent);
     transform: scale(.72);
     transform-origin: bottom right;
+  }
+  .reveal[data-navigation-mode="linear"] .controls .navigate-up,
+  .reveal[data-navigation-mode="linear"] .controls .navigate-down {
+    display: none;
   }
   .reveal .slide-number {
     background: transparent;
@@ -581,8 +604,9 @@ export function buildPresentationHtml(
     includeToc: false,
     progressiveReveal: false,
     imageShadow: true,
-    hideNavigationControls: false,
+    navigationControls: true,
     enableDrawing: false,
+    verticalSubpages: true,
     ratio: '16:9',
     headingFont: '',
     bodyFont: '',
@@ -632,6 +656,14 @@ export function buildPresentationHtml(
         image.style.objectFit = 'contain'
       }
     })
+    root.querySelectorAll('iframe').forEach((iframe) => {
+      const width = iframe.getAttribute('width')?.trim()
+      if (width && /^(?:\d+(?:\.\d+)?(?:px|%|rem|em|vw)?|auto)$/i.test(width)) {
+        iframe.style.width = /^\d+(?:\.\d+)?$/.test(width)
+          ? `${width}px`
+          : width
+      }
+    })
 
     if (settings.progressiveReveal) {
       root
@@ -659,11 +691,16 @@ export function buildPresentationHtml(
     }
 
     const imageNodes = [...root.querySelectorAll('img')]
+    const iframeNodes = [...root.querySelectorAll('iframe')]
     const tableNodes = [...root.querySelectorAll('table')]
-    const imageContainers = new Set<Element>()
+    const mediaContainers = new Set<Element>()
     imageNodes.forEach((image) => {
       const parent = image.parentElement
-      imageContainers.add(parent?.tagName === 'P' ? parent : image)
+      mediaContainers.add(parent?.tagName === 'P' ? parent : image)
+    })
+    iframeNodes.forEach((iframe) => {
+      const parent = iframe.parentElement
+      mediaContainers.add(parent?.tagName === 'P' ? parent : iframe)
     })
 
     const textRoot = root.cloneNode(true) as HTMLElement
@@ -672,22 +709,28 @@ export function buildPresentationHtml(
       if (parent?.tagName === 'P' && parent.textContent?.trim() === '') parent.remove()
       else image.remove()
     })
+    textRoot.querySelectorAll('iframe').forEach((iframe) => {
+      const parent = iframe.parentElement
+      if (parent?.tagName === 'P' && parent.textContent?.trim() === '') parent.remove()
+      else iframe.remove()
+    })
     textRoot.querySelectorAll('table').forEach((table) => table.remove())
     const hasText = Boolean(
       textRoot.textContent?.trim() ||
         textRoot.querySelector('pre, blockquote, ul, ol, hr'),
     )
     const hasImages = imageNodes.length > 0
+    const hasMedia = hasImages || iframeNodes.length > 0
     const hasTables = tableNodes.length > 0
 
     let bodyClass = ''
     let bodyHtml = root.innerHTML
     if (hasTables) {
       const tableHtml = tableNodes.map((table) => table.outerHTML).join('')
-      const imageHtml = [...imageContainers]
+      const mediaHtml = [...mediaContainers]
         .map((node) => node.outerHTML)
         .join('')
-      const mediaHtml = `${tableHtml}${imageHtml}`
+      const tableMediaHtml = `${tableHtml}${mediaHtml}`
       const widestColumns = Math.max(
         0,
         ...tableNodes.map(
@@ -698,27 +741,27 @@ export function buildPresentationHtml(
         0,
         ...tableNodes.map((table) => table.querySelectorAll('tr').length),
       )
-      if (!hasText && !hasImages) {
+      if (!hasText && !hasMedia) {
         bodyClass = ' is-table-only'
         bodyHtml = `<div class="table-column">${tableHtml}</div>`
       } else if (widestColumns >= 4 || widestColumns >= totalRows) {
         bodyClass = ' is-table-vertical'
         bodyHtml = `<div class="text-column">${textRoot.innerHTML}</div>
-          <div class="table-column">${mediaHtml}</div>`
+          <div class="table-column">${tableMediaHtml}</div>`
       } else {
         bodyClass = ' is-table-horizontal'
         bodyHtml = `<div class="text-column">${textRoot.innerHTML}</div>
-          <div class="table-column">${mediaHtml}</div>`
+          <div class="table-column">${tableMediaHtml}</div>`
       }
-    } else if (hasImages && !hasText) {
+    } else if (hasMedia && !hasText) {
       bodyClass = ' is-centered'
-      bodyHtml = `<div class="image-column">${[...imageContainers]
+      bodyHtml = `<div class="media-column">${[...mediaContainers]
         .map((node) => node.outerHTML)
         .join('')}</div>`
-    } else if (hasImages && hasText) {
+    } else if (hasMedia && hasText) {
       bodyClass = ' is-split'
       bodyHtml = `<div class="text-column">${textRoot.innerHTML}</div>
-        <div class="image-column">${[...imageContainers]
+        <div class="media-column">${[...mediaContainers]
           .map((node) => node.outerHTML)
           .join('')}</div>`
     }
@@ -862,8 +905,9 @@ export function buildPresentationHtml(
   <script>
     Reveal.initialize({
       hash: ${isPreview ? 'false' : 'true'},
-      controls: ${settings.hideNavigationControls ? 'false' : 'true'},
-      progress: ${settings.hideNavigationControls ? 'false' : 'true'},
+      navigationMode: '${settings.verticalSubpages ? 'default' : 'linear'}',
+      controls: ${settings.navigationControls ? 'true' : 'false'},
+      progress: ${settings.navigationControls ? 'true' : 'false'},
       slideNumber: 'c/t',
       center: false,
       transition: 'fade',
