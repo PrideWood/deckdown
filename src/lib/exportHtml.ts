@@ -28,6 +28,13 @@ const presentationCss = `
     padding: 54px 70px;
     height: 100%;
   }
+  .reveal.overview .slides section.present:not(.stack) {
+    outline: 14px solid var(--accent);
+    outline-offset: 10px;
+    box-shadow:
+      0 0 0 7px color-mix(in srgb, var(--slide-bg) 88%, transparent),
+      0 28px 72px color-mix(in srgb, var(--accent) 34%, transparent) !important;
+  }
   .reveal .slides section:not(.slide-cover):not(.slide-section) {
     display: grid !important;
     grid-template-rows: auto minmax(0, 1fr);

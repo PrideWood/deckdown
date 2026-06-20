@@ -100,8 +100,29 @@ function extractColumnGroups(source: string) {
   const output: string[] = []
   const groups: string[][] = []
   let index = 0
+  let outerFence: string | null = null
 
   while (index < lines.length) {
+    const fenceMatch = lines[index].match(/^\s*(`{3,}|~{3,})/)
+    if (outerFence) {
+      output.push(lines[index])
+      if (
+        fenceMatch &&
+        fenceMatch[1][0] === outerFence[0] &&
+        fenceMatch[1].length >= outerFence.length
+      ) {
+        outerFence = null
+      }
+      index += 1
+      continue
+    }
+    if (fenceMatch) {
+      outerFence = fenceMatch[1]
+      output.push(lines[index])
+      index += 1
+      continue
+    }
+
     if (!isColumnOpening(lines[index])) {
       output.push(lines[index])
       index += 1
@@ -123,7 +144,9 @@ function extractColumnGroups(source: string) {
     if (blocks.length >= 1) {
       const groupIndex = groups.push(blocks) - 1
       output.push(
+        '',
         `<div data-deckdown-columns-placeholder="${groupIndex}"></div>`,
+        '',
       )
       index = cursor
     } else {

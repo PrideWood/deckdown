@@ -38,7 +38,7 @@ import {
   saveImagesToProject,
   supportsProjectFolder,
 } from './lib/projectFiles'
-import { defaultMarkdown } from './lib/sample'
+import defaultMarkdown from './content/default.md?raw'
 import {
   defaultThemeCss,
   fontChoices,
