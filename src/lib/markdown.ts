@@ -23,6 +23,9 @@ interface MarkdownSection extends SourceChunk {
 }
 
 const headingPattern = /^(#{1,3})\s+(.+?)\s*$/
+const frontmatterPattern =
+  /^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/
+const pageSeparatorPattern = /^[ \t]{0,3}(?:-[ \t]*){3,}$/
 const TOC_START = '<!-- deckdown-toc:start -->'
 const TOC_END = '<!-- deckdown-toc:end -->'
 export const booleanSettingKeys = [
@@ -45,6 +48,18 @@ const legacyBooleanSettingKeys = [
   'hideNavigationControls',
 ] as const
 
+function normalizeMarkdownSource(source: string) {
+  return source.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n')
+}
+
+function readFrontmatter(source: string) {
+  const normalized = normalizeMarkdownSource(source)
+  return {
+    normalized,
+    match: normalized.match(frontmatterPattern),
+  }
+}
+
 export function formatYamlDate(date = new Date()) {
   const pad = (value: number) => String(value).padStart(2, '0')
   const offsetMinutes = -date.getTimezoneOffset()
@@ -58,8 +73,7 @@ export function formatYamlDate(date = new Date()) {
 }
 
 export function readDocumentDates(source: string): Partial<DocumentDates> {
-  const normalized = source.replace(/\r\n/g, '\n')
-  const frontmatter = normalized.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)
+  const { match: frontmatter } = readFrontmatter(source)
   if (!frontmatter) return {}
   const read = (key: string) =>
     frontmatter[1].match(new RegExp(`^${key}:\\s*(\\S+)\\s*$`, 'mi'))?.[1]
@@ -70,8 +84,7 @@ export function readDocumentDates(source: string): Partial<DocumentDates> {
 }
 
 export function readBooleanSettingsFrontmatter(source: string) {
-  const normalized = source.replace(/\r\n/g, '\n')
-  const frontmatter = normalized.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)
+  const { match: frontmatter } = readFrontmatter(source)
   const result: Partial<Record<BooleanSettingKey, boolean>> = {}
   if (!frontmatter) return result
 
@@ -97,8 +110,7 @@ export function readBooleanSettingsFrontmatter(source: string) {
 }
 
 export function readLogoSettingFrontmatter(source: string) {
-  const normalized = source.replace(/\r\n/g, '\n')
-  const frontmatter = normalized.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)
+  const { match: frontmatter } = readFrontmatter(source)
   if (!frontmatter) return {}
   const match = frontmatter[1].match(/^logo:\s*(.*?)\s*$/mi)
   return match ? { logo: match[1] } : {}
@@ -109,8 +121,7 @@ export function syncBooleanSettingsFrontmatter(
   settings: Pick<PresentationSettings, BooleanSettingKey | 'logo'>,
   dates?: Partial<DocumentDates>,
 ) {
-  const normalized = source.replace(/\r\n/g, '\n')
-  const frontmatter = normalized.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)
+  const { normalized, match: frontmatter } = readFrontmatter(source)
   const existingDates = readDocumentDates(normalized)
   const now = formatYamlDate()
   const documentDates: DocumentDates = {
@@ -152,16 +163,34 @@ function escapeText(value: string) {
 }
 
 function bodyAfterFrontmatter(source: string): SourceChunk {
-  const normalized = source.replace(/\r\n/g, '\n')
-  const frontmatter = normalized.match(/^---\n[\s\S]*?\n---(?:\n|$)/)
+  const { normalized, match: frontmatter } = readFrontmatter(source)
   const start = frontmatter?.[0].length || 0
   return { text: normalized.slice(start), start, end: normalized.length }
+}
+
+function updateFence(
+  line: string,
+  fence: { character: string; length: number } | null,
+) {
+  const marker = line.match(/^[ \t]{0,3}(`{3,}|~{3,})/)
+  if (!marker) return fence
+  if (!fence) {
+    return {
+      character: marker[1][0],
+      length: marker[1].length,
+    }
+  }
+  const closesFence =
+    marker[1][0] === fence.character &&
+    marker[1].length >= fence.length &&
+    /^[ \t]*$/.test(line.slice(marker[0].length))
+  return closesFence ? null : fence
 }
 
 function splitAtSeparators(chunk: SourceChunk): SourceChunk[] {
   const parts: SourceChunk[] = []
   const lines = chunk.text.split('\n')
-  let inFence = false
+  let fence: { character: string; length: number } | null = null
   let partStart = 0
   let offset = 0
 
@@ -179,8 +208,8 @@ function splitAtSeparators(chunk: SourceChunk): SourceChunk[] {
   }
 
   lines.forEach((line, index) => {
-    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
-    if (!inFence && /^\s*---\s*$/.test(line)) {
+    fence = updateFence(line, fence)
+    if (!fence && pageSeparatorPattern.test(line)) {
       pushPart(offset)
       partStart = offset + line.length + (index < lines.length - 1 ? 1 : 0)
     }
@@ -427,7 +456,7 @@ function detectKind(markdown: string, fallback: SlideKind = 'content'): SlideKin
 function splitBlocks(body: string, bodyStart: number): SourceChunk[] {
   const blocks: SourceChunk[] = []
   const lines = body.split('\n')
-  let inFence = false
+  let fence: { character: string; length: number } | null = null
   let blockStart = 0
   let offset = 0
 
@@ -445,8 +474,8 @@ function splitBlocks(body: string, bodyStart: number): SourceChunk[] {
   }
 
   lines.forEach((line, index) => {
-    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
-    if (!inFence && line.trim() === '') {
+    fence = updateFence(line, fence)
+    if (!fence && line.trim() === '') {
       pushBlock(offset)
       blockStart = offset + line.length + (index < lines.length - 1 ? 1 : 0)
     }
