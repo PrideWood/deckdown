@@ -1207,8 +1207,11 @@ export function buildPresentationHtml(
     }
     function handleOverlayShortcut(event) {
       if (
-        event.key === 'Escape' &&
+        (event.key || '').toLowerCase() === 't' &&
         event.shiftKey &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
         webOverlay.classList.contains('is-open')
       ) {
         event.preventDefault();
